@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RailTrack</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Share Tech Mono', monospace; background:#0a0a0a; color:#f3f1ea; margin:0; padding:16px; }
+  .sim-bar, .real-bar { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0; align-items:center; }
+  .sim-bar { opacity:.85; }
+  .real-bar button { font-family:'Share Tech Mono',monospace; font-size:.85rem; }
+  .cal-active { background:#5ec8e6 !important; color:#111 !important; }
+  .rifle-stage {
+    background:#000;
+    border:1px solid #2a261c;
+    border-radius:16px;
+    padding:16px 12px 18px;
+    margin:6px auto 12px;
+    max-width:640px;
+    width:100%;
+    box-sizing:border-box;
+  }
+  .view-wrap { position:relative; width:100%; margin:0 0 6px; display:flex; justify-content:center; }
+  .view-wrap:last-child { margin-bottom:0; }
+  .view-wrap img { width:77%; height:auto; border-radius:0; background:#000; display:block; margin-left:auto; margin-right:0; }
+  .view-wrap canvas { position:absolute; top:0; left:15%; width:70%; height:100%; pointer-events:none; }
+  .hist {
+    position:absolute;
+    top:26%;
+    left:6px;
+    width:90px;
+    background:transparent;
+    border:none;
+    padding:2px 4px;
+    font-size:16px;
+    color:#f5c518;
+    text-align:left;
+  }
+  #sideHist { top:20%; }
+  #isoHist { top:30%; }
+  .extra {
+    position:absolute;
+    font-size:13px;
+    color:#b8b4a8;
+    font-weight:500;
+  }
+  #compass { top:6%; right:8px; }
+  #elev { top:46%; right:8px; }
+  #recoil { bottom:26%; right:8px; }
+  #time { bottom:12%; right:8px; }
+  #cons { bottom:12%; right:72px; }
+  .cal-status { font-size:.8rem; color:#9a9386; margin:2px 0 6px; }
+  .live-dot { width:8px; height:8px; border-radius:50%; background:#3d8f4a; display:inline-block; margin-right:4px; }
+  @media (max-width: 480px) {
+    body { height:100vh; overflow:hidden; margin:0; padding:12px 10px 16px; }
+    .rifle-stage { margin:4px auto 6px; max-height:78vh; padding:14px 10px 16px; }
+  }
+</style>
+</head>
+<body>
+<p class="eyebrow">RailTrack</p>
+<div class="sim-bar">
+  <button type="button" id="sim">Sim shot</button>
+  <button type="button" id="manual">Manual</button>
+  <button type="button" id="auto">Auto</button>
+</div>
+<div class="real-bar">
+  <button type="button" id="cal">Calibrate</button>
+  <button type="button" id="ble">Connect BLE</button>
+  <span id="live"><span class="live-dot"></span>Live</span>
+</div>
+<p class="cal-status" id="calStatus">Ready.</p>
+<div class="rifle-stage">
+  <div class="view-wrap">
+    <img src="rifle-side.jpg" alt="Side view" />
+    <canvas id="side"></canvas>
+    <div class="hist" id="sideHist"></div>
+    <div class="extra" id="compass">N 142°</div>
+    <div class="extra" id="elev">Elev +2.1°</div>
+  </div>
+  <div class="view-wrap">
+    <img src="rifle-iso.jpg" alt="Isometric view" />
+    <canvas id="iso"></canvas>
+    <div class="hist" id="isoHist"></div>
+    <div class="extra" id="recoil">Recoil 4.2 g</div>
+    <div class="extra" id="time">Time 0.8 s</div>
+    <div class="extra" id="cons">Cons 92%</div>
+  </div>
+</div>
+<script>
+const sideImg = document.querySelector('img[alt="Side view"]');
+const isoImg = document.querySelector('img[alt="Isometric view"]');
+const side = document.getElementById('side');
+const iso = document.getElementById('iso');
+const sideHist = document.getElementById('sideHist');
+const isoHist = document.getElementById('isoHist');
+const calStatus = document.getElementById('calStatus');
+const calBtn = document.getElementById('cal');
+const bleBtn = document.getElementById('ble');
+const sctx = side.getContext('2d');
+const ictx = iso.getContext('2d');
+let arrows = [];
+let hist = [];
+let auto = false;
+let calibrating = false;
+let calShots = 0;
+let bleConnected = false;
+let maxPitch = 5.0;
+let maxYaw = 6.0;
+
+function resizeCanvases() {
+  if (sideImg.complete) { side.width = sideImg.clientWidth; side.height = sideImg.clientHeight; }
+  if (isoImg.complete) { iso.width = isoImg.clientWidth; iso.height = isoImg.clientHeight; }
+}
+sideImg.onload = isoImg.onload = resizeCanvases;
+window.addEventListener('resize', resizeCanvases);
+resizeCanvases();
+
+function colorFor(val) {
+  return val >= 0 ? '#f5c518' : '#5ec8e6';
+}
+
+function drawArrow(ctx, ox, oy, dx, dy, color, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(ox, oy);
+  ctx.lineTo(ox + dx, oy + dy);
+  ctx.stroke();
+  const ang = Math.atan2(dy, dx);
+  const hl = 20;
+  ctx.beginPath();
+  ctx.moveTo(ox + dx, oy + dy);
+  ctx.lineTo(ox + dx - hl * Math.cos(ang - 0.5), oy + dy - hl * Math.sin(ang - 0.5));
+  ctx.lineTo(ox + dx - hl * Math.cos(ang + 0.5), oy + dy - hl * Math.sin(ang + 0.5));
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+function updateHist() {
+  const items = hist.slice(0, 5);
+  sideHist.innerHTML = items.map((h, i) => {
+    const size = i === 0 ? '19px' : '16px';
+    const weight = i === 0 ? 'bold' : 'normal';
+    const arrow = h.pitch > 0 ? '▲' : h.pitch < 0 ? '▼' : '•';
+    const c = colorFor(h.pitch);
+    return '<div style="font-size:'+size+';font-weight:'+weight+';margin:2px 0;color:'+c+'">'+arrow+' '+(h.pitch>=0?'+':'')+h.pitch.toFixed(1)+'°</div>';
+  }).join('');
+  isoHist.innerHTML = items.map((h, i) => {
+    const size = i === 0 ? '19px' : '16px';
+    const weight = i === 0 ? 'bold' : 'normal';
+    const arrow = h.yaw > 0 ? '▶' : h.yaw < 0 ? '◀' : '•';
+    const c = colorFor(h.yaw);
+    return '<div style="font-size:'+size+';font-weight:'+weight+';margin:2px 0;color:'+c+'">'+arrow+' '+(h.yaw>=0?'+':'')+h.yaw.toFixed(1)+'°</div>';
+  }).join('');
+}
+
+function drawArrows() {
+  resizeCanvases();
+  const now = Date.now();
+  arrows = arrows.filter(a => now - a.t < 3500);
+  sctx.clearRect(0, 0, side.width, side.height);
+  ictx.clearRect(0, 0, iso.width, iso.height);
+
+  arrows.forEach(a => {
+    const age = (now - a.t) / 3500;
+    const alpha = Math.max(0, 1 - age);
+    const pCol = colorFor(a.pitch);
+    const yCol = colorFor(a.yaw);
+
+    const sox = side.width * 0.22;
+    const soy = side.height * 0.48;
+    const fixedSide = side.height * 0.22;
+    const sdy = a.pitch >= 0 ? -fixedSide : fixedSide;
+    if (Math.abs(a.pitch) > 0.05) drawArrow(sctx, sox, soy, 0, sdy, pCol, alpha);
+
+    const iox = iso.width * 0.32;
+    const ioy = iso.height * 0.52;
+    const fixedLen = Math.min(iso.width, iso.height) * 0.22;
+    const ang = a.yaw >= 0 ? Math.PI * 0.35 : Math.PI * 1.35;
+    const idx = Math.cos(ang) * fixedLen;
+    const idy = Math.sin(ang) * fixedLen;
+    if (Math.abs(a.yaw) > 0.05) drawArrow(ictx, iox, ioy, idx, idy, yCol, alpha);
+  });
+}
+
+function render() { drawArrows(); requestAnimationFrame(render); }
+render();
+
+function addShot(yaw, pitch) {
+  if (calibrating) {
+    calShots++;
+    calStatus.textContent = 'Calibration shot ' + calShots + ' detected.';
+    if (calShots >= 2) {
+      calibrating = false;
+      calShots = 0;
+      calStatus.textContent = 'Calibration complete. Zero set.';
+      calBtn.textContent = 'Calibrate';
+      calBtn.classList.remove('cal-active');
+    }
+  }
+  arrows.push({ t: Date.now(), yaw, pitch });
+  hist.unshift({ yaw, pitch });
+  if (hist.length > 5) hist.pop();
+  updateHist();
+  document.getElementById('elev').textContent = 'Elev ' + (pitch >= 0 ? '+' : '') + pitch.toFixed(1) + '°';
+  document.getElementById('recoil').textContent = 'Recoil ' + (Math.abs(pitch)*1.8 + 2.5).toFixed(1) + ' g';
+  document.getElementById('time').textContent = 'Time ' + (0.6 + Math.random()*0.6).toFixed(1) + ' s';
+  document.getElementById('cons').textContent = 'Cons ' + Math.floor(80 + Math.random()*15) + '%';
+  document.getElementById('compass').textContent = 'N ' + Math.floor(120 + Math.random()*40) + '°';
+}
+
+calBtn.onclick = () => {
+  calibrating = !calibrating;
+  calShots = 0;
+  if (calibrating) {
+    calStatus.textContent = 'Calibration active. Fire a shot.';
+    calBtn.textContent = 'Finish cal';
+    calBtn.classList.add('cal-active');
+  } else {
+    calStatus.textContent = 'Calibration cancelled.';
+    calBtn.textContent = 'Calibrate';
+    calBtn.classList.remove('cal-active');
+  }
+};
+
+bleBtn.onclick = async () => {
+  if (bleConnected) {
+    bleConnected = false;
+    bleBtn.textContent = 'Connect BLE';
+    document.getElementById('live').style.opacity = '0.4';
+    calStatus.textContent = 'Disconnected.';
+    return;
+  }
+  try {
+    calStatus.textContent = 'Scanning for RailTrack…';
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ name: 'RailTrack' }],
+      optionalServices: ['battery_service']
+    });
+    calStatus.textContent = 'Found ' + (device.name || 'RailTrack') + '. Connecting…';
+    const server = await device.gatt.connect();
+    bleConnected = true;
+    bleBtn.textContent = 'Disconnect';
+    document.getElementById('live').style.opacity = '1';
+    calStatus.textContent = 'Connected to ' + (device.name || 'RailTrack');
+    device.addEventListener('gattserverdisconnected', () => {
+      bleConnected = false;
+      bleBtn.textContent = 'Connect BLE';
+      document.getElementById('live').style.opacity = '0.4';
+      calStatus.textContent = 'Device disconnected.';
+    });
+  } catch (e) {
+    calStatus.textContent = 'BLE: ' + (e.message || 'cancelled or not found');
+  }
+};
+
+document.getElementById('sim').onclick = () => {
+  const yaw = (Math.random() - 0.5) * (maxYaw * 1.4);
+  const pitch = (Math.random() - 0.5) * (maxPitch * 1.4);
+  addShot(yaw, pitch);
+};
+
+document.getElementById('manual').onclick = () => {
+  const yaw = parseFloat(prompt('Yaw (right positive, left negative):', '1.2')) || 0;
+  const pitch = parseFloat(prompt('Pitch (up positive, down negative):', '-0.8')) || 0;
+  addShot(yaw, pitch);
+};
+
+document.getElementById('auto').onclick = () => {
+  auto = !auto;
+  document.getElementById('auto').textContent = auto ? 'Stop auto' : 'Auto';
+  if (auto) {
+    const loop = () => {
+      if (!auto) return;
+      const yaw = (Math.random() - 0.5) * (maxYaw * 1.2);
+      const pitch = (Math.random() - 0.5) * (maxPitch * 1.2);
+      addShot(yaw, pitch);
+      setTimeout(loop, 1800);
+    };
+    loop();
+  }
+};
+
+updateHist();
+</script>
+</body>
+</html>
