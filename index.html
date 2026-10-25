@@ -45,7 +45,7 @@
     color:#b8b4a8;
     font-weight:500;
   }
-  0#compass { top:1%; right:8px; }
+  #compass { top:1%; right:8px; }
   #elev { top:52%; right:8px; }
   #recoil { bottom:12%; right:8px; }
   #time { bottom:2%; right:8px; }
@@ -54,31 +54,25 @@
   .live-dot { width:8px; height:8px; border-radius:50%; background:#3d8f4a; display:inline-block; margin-right:4px; }
   #compass img { transition: transform 0.3s ease; }
   @media (max-width: 480px) {
-  body { height:100vh; overflow:hidden; margin:0; padding:12px 10px 16px; }
-  .rifle-stage { margin:4px auto 6px; max-height:78vh; padding:14px 10px 16px; }
+    body { height:100vh; overflow:hidden; margin:0; padding:12px 10px 16px; }
+    .rifle-stage { margin:4px auto 6px; max-height:78vh; padding:14px 10px 16px; }
     #compass img { width:40px !important; height:40px !important; }
-
-  #compass { top:2%; right:4px; }
-  #recoil { bottom:32%; right:6px; }
-  #time   { bottom:18%; right:6px; }
-  #cons   { bottom:18%; right:68px; }
-}
+    #compass { top:2%; right:4px; }
+    #recoil { bottom:32%; right:6px; }
+    #time   { bottom:18%; right:6px; }
+    #cons   { bottom:18%; right:68px; }
+  }
   button {
-  background: #1a1a1a;
-  color: #f5c518;
-  border: 1px solid #3a3428;
-  border-radius: 4px;
-  padding: 6px 12px;
-  font-family: 'Share Tech Mono', monospace;
-  cursor: pointer;
-}
-button:hover {
-  background: #2a261c;
-}
-.cal-active {
-  background: #5ec8e6 !important;
-  color: #111 !important;
-}
+    background: #1a1a1a;
+    color: #f5c518;
+    border: 1px solid #3a3428;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-family: 'Share Tech Mono', monospace;
+    cursor: pointer;
+  }
+  button:hover { background: #2a261c; }
+  .cal-active { background: #5ec8e6 !important; color: #111 !important; }
 </style>
 </head>
 <body>
@@ -99,7 +93,10 @@ button:hover {
     <img src="rifle-side.jpg" alt="Side view" />
     <canvas id="side"></canvas>
     <div class="hist" id="sideHist"></div>
-    <div class="extra" id="compass">   <img src="compass.png" alt="Compass" style="width:46px; height:46px; display:block; margin:0 auto 2px;">   <span id="compassText">N 142°</span> </div>
+    <div class="extra" id="compass">
+      <img src="compass.png" alt="Compass" style="width:46px; height:46px; display:block; margin:0 auto 2px;">
+      <span id="compassText">N 142°</span>
+    </div>
     <div class="extra" id="elev">Elev +2.1°</div>
   </div>
   <div class="view-wrap">
@@ -129,6 +126,7 @@ let auto = false;
 let calibrating = false;
 let calShots = 0;
 let bleConnected = false;
+let bleServer = null;
 let maxPitch = 5.0;
 let maxYaw = 6.0;
 
@@ -215,7 +213,7 @@ function drawArrows() {
 function render() { drawArrows(); requestAnimationFrame(render); }
 render();
 
-function addShot(yaw, pitch) {
+function addShot(yaw, pitch, recoil = null, heading = null) {
   if (calibrating) {
     calShots++;
     calStatus.textContent = 'Calibration shot ' + calShots + ' detected.';
@@ -232,19 +230,31 @@ function addShot(yaw, pitch) {
   if (hist.length > 5) hist.pop();
   updateHist();
   document.getElementById('elev').textContent = 'Elev ' + (pitch >= 0 ? '+' : '') + pitch.toFixed(1) + '°';
-  document.getElementById('recoil').textContent = 'Recoil ' + (Math.abs(pitch)*1.8 + 2.5).toFixed(1) + ' g';
+  document.getElementById('recoil').textContent = 'Recoil ' + (recoil !== null ? recoil.toFixed(1) : (Math.abs(pitch)*1.8 + 2.5).toFixed(1)) + ' g';
   document.getElementById('time').textContent = 'Time ' + (0.6 + Math.random()*0.6).toFixed(1) + ' s';
   document.getElementById('cons').textContent = 'Cons ' + Math.floor(80 + Math.random()*15) + '%';
-  const heading = 120 + Math.random() * 40;
-  document.getElementById('compassText').textContent = 'N ' + Math.floor(heading) + '°';
-  document.querySelector('#compass img').style.transform = 'rotate(' + heading + 'deg)';
+  const h = heading !== null ? heading : (120 + Math.random() * 40);
+  document.getElementById('compassText').textContent = 'N ' + Math.floor(h) + '°';
+  const img = document.querySelector('#compass img');
+  if (img) img.style.transform = 'rotate(' + h + 'deg)';
+}
+
+function handleIncomingPacket(data) {
+  try {
+    const pkt = typeof data === 'string' ? JSON.parse(data) : data;
+    if (typeof pkt.yaw === 'number' && typeof pkt.pitch === 'number') {
+      addShot(pkt.yaw, pkt.pitch, pkt.recoil, pkt.heading);
+    }
+  } catch (e) {
+    console.warn('Bad packet', e);
+  }
 }
 
 calBtn.onclick = () => {
   calibrating = !calibrating;
   calShots = 0;
   if (calibrating) {
-    calStatus.textContent = 'Calibration active. Fire a shot.';
+    calStatus.textContent = 'Calibration active. Hold still or fire reference shot.';
     calBtn.textContent = 'Finish cal';
     calBtn.classList.add('cal-active');
   } else {
@@ -257,6 +267,7 @@ calBtn.onclick = () => {
 bleBtn.onclick = async () => {
   if (bleConnected) {
     bleConnected = false;
+    if (bleServer) bleServer.disconnect();
     bleBtn.textContent = 'Connect BLE';
     document.getElementById('live').style.opacity = '0.4';
     calStatus.textContent = 'Disconnected.';
@@ -269,7 +280,7 @@ bleBtn.onclick = async () => {
       optionalServices: ['battery_service']
     });
     calStatus.textContent = 'Found ' + (device.name || 'RailTrack') + '. Connecting…';
-    const server = await device.gatt.connect();
+    bleServer = await device.gatt.connect();
     bleConnected = true;
     bleBtn.textContent = 'Disconnect';
     document.getElementById('live').style.opacity = '1';
