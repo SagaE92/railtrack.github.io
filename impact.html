@@ -90,31 +90,29 @@ function updateOffset() {
   const dist = parseFloat(distanceEl.value) || 300;
   const yawRad = degToRad(currentYaw);
   const pitchRad = degToRad(currentPitch);
-  // small-angle approx is fine; use tan for correctness
-  const offX = dist * Math.tan(yawRad) * 1000;   // mm
-  const offY = dist * Math.tan(pitchRad) * 1000; // mm
+  const offX = dist * Math.tan(yawRad) * 1000;
+  const offY = dist * Math.tan(pitchRad) * 1000;
   offsetXEl.textContent = offX.toFixed(0);
   offsetYEl.textContent = offY.toFixed(0);
-  drawTarget(offX, offY, dist);
+  drawTarget(offX, offY);
 }
 
-function drawTarget(offXmm, offYmm, distM) {
+function drawTarget(offXmm, offYmm) {
   const w = canvas.width;
   const h = canvas.height;
   const cx = w / 2;
   const cy = h / 2;
+  const maxR = 140;
   ctx.clearRect(0, 0, w, h);
 
-  // rings
   ctx.strokeStyle = '#333';
   ctx.lineWidth = 1;
-  for (let r = 40; r <= 140; r += 40) {
+  for (let r = 40; r <= maxR; r += 40) {
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.stroke();
   }
 
-  // crosshair
   ctx.strokeStyle = '#555';
   ctx.beginPath();
   ctx.moveTo(cx - 150, cy);
@@ -123,27 +121,35 @@ function drawTarget(offXmm, offYmm, distM) {
   ctx.lineTo(cx, cy + 150);
   ctx.stroke();
 
-  // scale: map mm offset into pixels. Use a fixed scale so movement is visible.
-  // At 300 m, 1000 mm = ~1 m → show ~1 m as 100 px
-  const pxPerMm = 100 / (distM * 3.33); // rough visual scale
-  const pxX = cx + offXmm * pxPerMm;
-  const pxY = cy - offYmm * pxPerMm; // invert Y
+  // Scale so typical small angles stay inside the rings.
+  // Treat ~500 mm offset as roughly the outer ring radius.
+  const scale = maxR / 500;
+  let pxX = cx + offXmm * scale;
+  let pxY = cy - offYmm * scale;
 
-  // impact point
+  // Clamp to stay inside the outer ring
+  const dx = pxX - cx;
+  const dy = pxY - cy;
+  const distPx = Math.sqrt(dx * dx + dy * dy);
+  if (distPx > maxR - 8) {
+    const f = (maxR - 8) / distPx;
+    pxX = cx + dx * f;
+    pxY = cy + dy * f;
+  }
+
   ctx.fillStyle = '#f5c518';
   ctx.beginPath();
   ctx.arc(pxX, pxY, 6, 0, Math.PI * 2);
   ctx.fill();
 
-  // label
   ctx.fillStyle = '#b8b4a8';
   ctx.font = '12px Share Tech Mono';
   ctx.fillText('impact', pxX + 10, pxY - 8);
 }
 
 simBtn.onclick = () => {
-  currentYaw = (Math.random() - 0.5) * 2.0;   // ±1°
-  currentPitch = (Math.random() - 0.5) * 1.5; // ±0.75°
+  currentYaw = (Math.random() - 0.5) * 1.2;
+  currentPitch = (Math.random() - 0.5) * 1.0;
   updateOffset();
 };
 
