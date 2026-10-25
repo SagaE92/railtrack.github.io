@@ -45,7 +45,15 @@
     color:#b8b4a8;
     font-weight:500;
   }
-  #compass { top:1%; right:8px; }
+  #compass { top:0%; right:6px; text-align:center; }
+  #compass img {
+    width:36px;
+    height:36px;
+    display:block;
+    margin:0 auto 1px;
+    border-radius:50%;
+    object-fit:cover;
+  }
   #elev { top:52%; right:8px; }
   #recoil { bottom:12%; right:8px; }
   #time { bottom:2%; right:8px; }
@@ -56,8 +64,8 @@
   @media (max-width: 480px) {
     body { height:100vh; overflow:hidden; margin:0; padding:12px 10px 16px; }
     .rifle-stage { margin:4px auto 6px; max-height:78vh; padding:14px 10px 16px; }
-    #compass img { width:40px !important; height:40px !important; }
-    #compass { top:2%; right:4px; }
+    #compass img { width:32px !important; height:32px !important; }
+    #compass { top:1%; right:4px; }
     #recoil { bottom:32%; right:6px; }
     #time   { bottom:18%; right:6px; }
     #cons   { bottom:18%; right:68px; }
@@ -94,7 +102,7 @@
     <canvas id="side"></canvas>
     <div class="hist" id="sideHist"></div>
     <div class="extra" id="compass">
-      <img src="compass.png" alt="Compass" style="width:46px; height:46px; display:block; margin:0 auto 2px;">
+      <img src="compass.png" alt="Compass">
       <span id="compassText">N 142°</span>
     </div>
     <div class="extra" id="elev">Elev +2.1°</div>
@@ -200,10 +208,12 @@ function drawArrows() {
     const sdy = a.pitch >= 0 ? -fixedSide : fixedSide;
     if (Math.abs(a.pitch) > 0.05) drawArrow(sctx, sox, soy, 0, sdy, pCol, alpha);
 
+    // Iso view: barrel runs roughly ~30-40 deg up-right in the image.
+    // Use ~90 deg relative to that so arrows sit more perpendicular to the stock.
     const iox = iso.width * 0.32;
     const ioy = iso.height * 0.52;
     const fixedLen = Math.min(iso.width, iso.height) * 0.22;
-    const ang = a.yaw >= 0 ? Math.PI * 0.35 : Math.PI * 1.35;
+    const ang = a.yaw >= 0 ? Math.PI * 0.5 : Math.PI * 1.5; // pure vertical relative to canvas for cleaner 90
     const idx = Math.cos(ang) * fixedLen;
     const idy = Math.sin(ang) * fixedLen;
     if (Math.abs(a.yaw) > 0.05) drawArrow(ictx, iox, ioy, idx, idy, yCol, alpha);
