@@ -7,6 +7,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
 <style>
   body { font-family: 'Share Tech Mono', monospace; background:#0a0a0a; color:#f3f1ea; margin:0; padding:16px; }
+  a { color:#f5c518; text-decoration:none; }
+  a:hover { text-decoration:underline; }
   .sim-bar, .real-bar { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0; align-items:center; }
   .sim-bar { opacity:.85; }
   .real-bar button { font-family:'Share Tech Mono',monospace; font-size:.85rem; }
@@ -85,6 +87,7 @@
 </head>
 <body>
 <p class="eyebrow">RailTrack</p>
+<p><a href="impact.html">Impact offset →</a></p>
 <div class="sim-bar">
   <button type="button" id="sim">Sim shot</button>
   <button type="button" id="manual">Manual</button>
@@ -208,12 +211,10 @@ function drawArrows() {
     const sdy = a.pitch >= 0 ? -fixedSide : fixedSide;
     if (Math.abs(a.pitch) > 0.05) drawArrow(sctx, sox, soy, 0, sdy, pCol, alpha);
 
-    // Iso view: barrel runs roughly ~30-40 deg up-right in the image.
-    // Use ~90 deg relative to that so arrows sit more perpendicular to the stock.
     const iox = iso.width * 0.32;
     const ioy = iso.height * 0.52;
     const fixedLen = Math.min(iso.width, iso.height) * 0.22;
-    const ang = a.yaw >= 0 ? Math.PI * 0.5 : Math.PI * 1.5; // pure vertical relative to canvas for cleaner 90
+    const ang = a.yaw >= 0 ? Math.PI * 0.5 : Math.PI * 1.5;
     const idx = Math.cos(ang) * fixedLen;
     const idy = Math.sin(ang) * fixedLen;
     if (Math.abs(a.yaw) > 0.05) drawArrow(ictx, iox, ioy, idx, idy, yCol, alpha);
