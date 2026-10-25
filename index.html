@@ -52,10 +52,27 @@
   #cons { bottom:2%; right:12px; }
   .cal-status { font-size:.8rem; color:#9a9386; margin:2px 0 6px; }
   .live-dot { width:8px; height:8px; border-radius:50%; background:#3d8f4a; display:inline-block; margin-right:4px; }
+  #compass img { transition: transform 0.3s ease; }
   @media (max-width: 480px) {
     body { height:100vh; overflow:hidden; margin:0; padding:12px 10px 16px; }
     .rifle-stage { margin:4px auto 6px; max-height:78vh; padding:14px 10px 16px; }
   }
+  button {
+  background: #1a1a1a;
+  color: #f5c518;
+  border: 1px solid #3a3428;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-family: 'Share Tech Mono', monospace;
+  cursor: pointer;
+}
+button:hover {
+  background: #2a261c;
+}
+.cal-active {
+  background: #5ec8e6 !important;
+  color: #111 !important;
+}
 </style>
 </head>
 <body>
@@ -76,7 +93,7 @@
     <img src="rifle-side.jpg" alt="Side view" />
     <canvas id="side"></canvas>
     <div class="hist" id="sideHist"></div>
-    <div class="extra" id="compass">N 142°</div>
+    <div class="extra" id="compass">   <img src="compass.png" alt="Compass" style="width:36px; height:36px; display:block; margin:0 auto 2px;">   <span id="compassText">N 142°</span> </div>
     <div class="extra" id="elev">Elev +2.1°</div>
   </div>
   <div class="view-wrap">
@@ -212,7 +229,9 @@ function addShot(yaw, pitch) {
   document.getElementById('recoil').textContent = 'Recoil ' + (Math.abs(pitch)*1.8 + 2.5).toFixed(1) + ' g';
   document.getElementById('time').textContent = 'Time ' + (0.6 + Math.random()*0.6).toFixed(1) + ' s';
   document.getElementById('cons').textContent = 'Cons ' + Math.floor(80 + Math.random()*15) + '%';
-  document.getElementById('compass').textContent = 'N ' + Math.floor(120 + Math.random()*40) + '°';
+  const heading = 120 + Math.random() * 40;
+  document.getElementById('compassText').textContent = 'N ' + Math.floor(heading) + '°';
+  document.querySelector('#compass img').style.transform = 'rotate(' + heading + 'deg)';
 }
 
 calBtn.onclick = () => {
