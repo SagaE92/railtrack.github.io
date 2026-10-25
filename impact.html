@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RailTrack — Impact Offset</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Share Tech Mono', monospace; background:#0a0a0a; color:#f3f1ea; margin:0; padding:16px; }
+  a { color:#f5c518; text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .panel {
+    background:#000;
+    border:1px solid #2a261c;
+    border-radius:16px;
+    padding:16px;
+    max-width:520px;
+    margin:12px auto;
+    box-sizing:border-box;
+  }
+  label { display:block; margin:10px 0 4px; font-size:0.9rem; color:#b8b4a8; }
+  input[type=number] {
+    background:#1a1a1a;
+    color:#f3f1ea;
+    border:1px solid #3a3428;
+    border-radius:4px;
+    padding:6px 10px;
+    font-family:inherit;
+    width:120px;
+  }
+  .readout { font-size:1.4rem; margin:8px 0; }
+  .readout span { color:#f5c518; }
+  #targetCanvas {
+    display:block;
+    margin:16px auto;
+    background:#111;
+    border-radius:8px;
+  }
+  .note { font-size:0.8rem; color:#9a9386; margin-top:12px; }
+  button {
+    background:#1a1a1a;
+    color:#f5c518;
+    border:1px solid #3a3428;
+    border-radius:4px;
+    padding:6px 12px;
+    font-family:inherit;
+    cursor:pointer;
+  }
+  button:hover { background:#2a261c; }
+</style>
+</head>
+<body>
+<p><a href="index.html">← Back to RailTrack</a></p>
+<h2>Impact Offset</h2>
+<div class="panel">
+  <label for="distance">Distance to target (m)</label>
+  <input type="number" id="distance" value="300" min="1" step="10">
+
+  <div class="readout">Horizontal: <span id="offsetX">0</span> mm</div>
+  <div class="readout">Vertical: <span id="offsetY">0</span> mm</div>
+
+  <canvas id="targetCanvas" width="320" height="320"></canvas>
+
+  <div>
+    <button type="button" id="simBtn">Sim shot</button>
+    <button type="button" id="zeroBtn">Zero</button>
+  </div>
+
+  <p class="note">
+    Relative only. Absolute accuracy at long range is coarse (±1–2° typical).<br>
+    Useful as “pushed left a little / a lot” compared with the previous shot or zero.
+  </p>
+</div>
+
+<script>
+const distanceEl = document.getElementById('distance');
+const offsetXEl = document.getElementById('offsetX');
+const offsetYEl = document.getElementById('offsetY');
+const canvas = document.getElementById('targetCanvas');
+const ctx = canvas.getContext('2d');
+const simBtn = document.getElementById('simBtn');
+const zeroBtn = document.getElementById('zeroBtn');
+
+let currentYaw = 0;
+let currentPitch = 0;
+
+function degToRad(d) { return d * Math.PI / 180; }
+
+function updateOffset() {
+  const dist = parseFloat(distanceEl.value) || 300;
+  const yawRad = degToRad(currentYaw);
+  const pitchRad = degToRad(currentPitch);
+  // small-angle approx is fine; use tan for correctness
+  const offX = dist * Math.tan(yawRad) * 1000;   // mm
+  const offY = dist * Math.tan(pitchRad) * 1000; // mm
+  offsetXEl.textContent = offX.toFixed(0);
+  offsetYEl.textContent = offY.toFixed(0);
+  drawTarget(offX, offY, dist);
+}
+
+function drawTarget(offXmm, offYmm, distM) {
+  const w = canvas.width;
+  const h = canvas.height;
+  const cx = w / 2;
+  const cy = h / 2;
+  ctx.clearRect(0, 0, w, h);
+
+  // rings
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1;
+  for (let r = 40; r <= 140; r += 40) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  // crosshair
+  ctx.strokeStyle = '#555';
+  ctx.beginPath();
+  ctx.moveTo(cx - 150, cy);
+  ctx.lineTo(cx + 150, cy);
+  ctx.moveTo(cx, cy - 150);
+  ctx.lineTo(cx, cy + 150);
+  ctx.stroke();
+
+  // scale: map mm offset into pixels. Use a fixed scale so movement is visible.
+  // At 300 m, 1000 mm = ~1 m → show ~1 m as 100 px
+  const pxPerMm = 100 / (distM * 3.33); // rough visual scale
+  const pxX = cx + offXmm * pxPerMm;
+  const pxY = cy - offYmm * pxPerMm; // invert Y
+
+  // impact point
+  ctx.fillStyle = '#f5c518';
+  ctx.beginPath();
+  ctx.arc(pxX, pxY, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // label
+  ctx.fillStyle = '#b8b4a8';
+  ctx.font = '12px Share Tech Mono';
+  ctx.fillText('impact', pxX + 10, pxY - 8);
+}
+
+simBtn.onclick = () => {
+  currentYaw = (Math.random() - 0.5) * 2.0;   // ±1°
+  currentPitch = (Math.random() - 0.5) * 1.5; // ±0.75°
+  updateOffset();
+};
+
+zeroBtn.onclick = () => {
+  currentYaw = 0;
+  currentPitch = 0;
+  updateOffset();
+};
+
+distanceEl.oninput = updateOffset;
+updateOffset();
+</script>
+</body>
+</html>
