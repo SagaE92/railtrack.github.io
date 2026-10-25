@@ -56,6 +56,9 @@
   <label for="distance">Distance to target (m)</label>
   <input type="number" id="distance" value="300" min="1" step="10">
 
+  <label for="targetWidth">Target width (mm)</label>
+  <input type="number" id="targetWidth" value="500" min="50" step="50">
+
   <div class="readout">Horizontal: <span id="offsetX">0</span> mm</div>
   <div class="readout">Vertical: <span id="offsetY">0</span> mm</div>
 
@@ -68,12 +71,13 @@
 
   <p class="note">
     Relative only. Absolute accuracy at long range is coarse (±1–2° typical).<br>
-    Useful as “pushed left a little / a lot” compared with the previous shot or zero.
+    Outer ring = target width you set. Impact stays inside for typical small movements.
   </p>
 </div>
 
 <script>
 const distanceEl = document.getElementById('distance');
+const targetWidthEl = document.getElementById('targetWidth');
 const offsetXEl = document.getElementById('offsetX');
 const offsetYEl = document.getElementById('offsetY');
 const canvas = document.getElementById('targetCanvas');
@@ -88,16 +92,17 @@ function degToRad(d) { return d * Math.PI / 180; }
 
 function updateOffset() {
   const dist = parseFloat(distanceEl.value) || 300;
+  const targetWidth = parseFloat(targetWidthEl.value) || 500;
   const yawRad = degToRad(currentYaw);
   const pitchRad = degToRad(currentPitch);
   const offX = dist * Math.tan(yawRad) * 1000;
   const offY = dist * Math.tan(pitchRad) * 1000;
   offsetXEl.textContent = offX.toFixed(0);
   offsetYEl.textContent = offY.toFixed(0);
-  drawTarget(offX, offY);
+  drawTarget(offX, offY, targetWidth);
 }
 
-function drawTarget(offXmm, offYmm) {
+function drawTarget(offXmm, offYmm, targetWidthMm) {
   const w = canvas.width;
   const h = canvas.height;
   const cx = w / 2;
@@ -105,9 +110,16 @@ function drawTarget(offXmm, offYmm) {
   const maxR = 140;
   ctx.clearRect(0, 0, w, h);
 
+  // Outer ring represents the full target width (diameter)
+  const halfWidth = targetWidthMm / 2;
+  const scale = maxR / halfWidth;
+
   ctx.strokeStyle = '#333';
   ctx.lineWidth = 1;
-  for (let r = 40; r <= maxR; r += 40) {
+  // Draw a few rings proportional to the target
+  const ringSteps = 4;
+  for (let i = 1; i <= ringSteps; i++) {
+    const r = (maxR / ringSteps) * i;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.stroke();
@@ -121,13 +133,10 @@ function drawTarget(offXmm, offYmm) {
   ctx.lineTo(cx, cy + 150);
   ctx.stroke();
 
-  // Scale so typical small angles stay inside the rings.
-  // Treat ~500 mm offset as roughly the outer ring radius.
-  const scale = maxR / 500;
   let pxX = cx + offXmm * scale;
   let pxY = cy - offYmm * scale;
 
-  // Clamp to stay inside the outer ring
+  // Clamp inside outer ring
   const dx = pxX - cx;
   const dy = pxY - cy;
   const distPx = Math.sqrt(dx * dx + dy * dy);
@@ -160,6 +169,7 @@ zeroBtn.onclick = () => {
 };
 
 distanceEl.oninput = updateOffset;
+targetWidthEl.oninput = updateOffset;
 updateOffset();
 </script>
 </body>
