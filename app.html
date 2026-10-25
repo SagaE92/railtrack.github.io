@@ -11,7 +11,7 @@
   a:hover { text-decoration:underline; }
   .top { padding:12px 16px 0; }
   .tabs { display:flex; border-bottom:1px solid #2a261c; position:sticky; top:0; background:#0a0a0a; z-index:2; }
-  .tab { flex:1; text-align:center; padding:12px 0; background:none; border:none; color:#b8b4a8; font-family:inherit; font-size:0.95rem; cursor:pointer; }
+  .tab { flex:1; text-align:center; padding:12px 0; background:none; border:none; color:#b8b4a8; font-family:inherit; font-size:0.95rem; cursor:pointer; min-height:44px; }
   .tab.active { color:#f5c518; border-bottom:2px solid #f5c518; }
   .view { display:none; padding:16px; }
   .view.active { display:block; }
@@ -23,26 +23,36 @@
     margin-bottom:12px;
   }
   label { display:block; margin:8px 0 4px; font-size:0.85rem; color:#b8b4a8; }
-  input[type=number] {
+  input[type=number], select {
     background:#1a1a1a; color:#f3f1ea; border:1px solid #3a3428;
     border-radius:4px; padding:6px 10px; font-family:inherit; width:100px;
   }
   button {
     background:#1a1a1a; color:#f5c518; border:1px solid #3a3428;
-    border-radius:4px; padding:8px 14px; font-family:inherit; cursor:pointer;
-    margin:2px;
+    border-radius:4px; padding:10px 16px; font-family:inherit; cursor:pointer;
+    margin:4px; min-height:44px;
   }
   button:hover { background:#2a261c; }
-  .readout { font-size:1.8rem; margin:8px 0; line-height:1.2; }
-  .readout span { color:#f5c518; }
+  button:disabled { opacity:0.5; cursor:not-allowed; }
+  .readout { font-size:32px; margin:8px 0 4px; line-height:1.1; }
+  .readout-sub { font-size:0.8rem; color:#b8b4a8; margin-bottom:8px; }
+  .cant { font-size:0.9rem; margin:4px 0; }
+  .cant.ok { color:#3d8f4a; }
+  .cant.over { color:#f5c518; }
   #target { display:block; margin:12px auto; background:#111; border-radius:8px; }
   .note { font-size:0.75rem; color:#9a9386; }
   .status { font-size:0.85rem; margin:4px 0 10px; color:#b8b4a8; }
   .demo-badge { background:#5ec8e6; color:#111; padding:2px 6px; border-radius:3px; font-size:0.7rem; margin-left:6px; }
-  .shot-list { max-height:180px; overflow-y:auto; font-size:0.9rem; }
-  .shot-row { padding:4px 0; border-bottom:1px solid #222; }
-  .stats { font-size:0.85rem; color:#b8b4a8; margin-top:8px; }
-  .session-row { padding:8px 0; border-bottom:1px solid #222; }
+  .shot-list { max-height:160px; overflow-y:auto; font-size:0.9rem; }
+  .shot-row { padding:6px 0; border-bottom:1px solid #222; cursor:pointer; }
+  .stats { font-size:0.8rem; color:#b8b4a8; margin-top:8px; }
+  .session-row { padding:8px 0; border-bottom:1px solid #222; cursor:pointer; }
+  .banner { padding:8px 12px; margin:8px 16px; border-radius:6px; font-size:0.85rem; }
+  .banner.red { background:#4a1a1a; color:#ff6b6b; }
+  .banner.amber { background:#3a2e1a; color:#f5c518; }
+  .units { display:flex; gap:6px; margin:6px 0; }
+  .units button { padding:6px 12px; min-height:36px; }
+  .units button.active { background:#f5c518; color:#111; }
 </style>
 </head>
 <body>
@@ -51,6 +61,7 @@
   <h2 style="margin:4px 0 8px;">RailTrack <span class="demo-badge" id="demoBadge">DEMO</span></h2>
   <div class="status" id="status">Not connected · Demo mode</div>
 </div>
+<div id="banner"></div>
 
 <div class="tabs">
   <button class="tab active" data-tab="shoot">Shoot</button>
@@ -60,7 +71,7 @@
 
 <div class="view active" id="view-shoot">
   <div class="panel">
-    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+    <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
       <div>
         <label>Distance (m)</label>
         <input type="number" id="distance" value="300" min="1" step="10">
@@ -69,22 +80,32 @@
         <label>Target width (mm)</label>
         <input type="number" id="targetWidth" value="500" min="50" step="50">
       </div>
+      <div>
+        <label>Units</label>
+        <div class="units">
+          <button type="button" data-unit="moa" class="active">MOA</button>
+          <button type="button" data-unit="mil">mil</button>
+          <button type="button" data-unit="mm">mm</button>
+        </div>
+      </div>
     </div>
 
-    <div class="readout" id="readout">→ R 0 mm &nbsp; ↑ U 0 mm</div>
+    <div class="readout" id="readout">→ R 0.0 MOA</div>
+    <div class="readout-sub" id="readoutSub"></div>
+    <div class="cant ok" id="cant">Cant 0.0° — OK</div>
+
     <canvas id="target" width="300" height="300"></canvas>
 
     <div>
-      <button id="gen">Generate shot</button>
+      <button id="start">Start session</button>
+      <button id="end" disabled>End session</button>
       <button id="zero">Zero</button>
       <button id="undo">Undo</button>
     </div>
 
     <div class="stats" id="stats">Shots: 0</div>
-
     <div class="shot-list" id="shotList"></div>
-
-    <p class="note">Fixed scale. Outer ring = target width. Relative only. Cant: n/a</p>
+    <p class="note">Auto-scale plot. Edge arrows for off-scale shots. Relative only.</p>
   </div>
 </div>
 
@@ -93,6 +114,7 @@
     <h3 style="margin:0 0 8px;">Sessions</h3>
     <div id="sessionList"><p class="note">No sessions yet.</p></div>
     <button id="export">Export current CSV</button>
+    <button id="exportAll">Export all</button>
     <button id="newSession">New session</button>
   </div>
 </div>
@@ -101,13 +123,21 @@
   <div class="panel">
     <h3 style="margin:0 0 8px;">Settings</h3>
     <label><input type="checkbox" id="demo" checked> Demo mode</label>
-    <label>Shots shown <input type="number" id="nShots" value="10" min="5" max="30" style="width:60px;"></label>
+    <div id="demoControls" style="margin:8px 0;">
+      <button id="gen">Generate shot</button>
+    </div>
+    <label>Shots shown <select id="nShots"><option>5</option><option selected>10</option><option>20</option></select></label>
+    <label>Cant tolerance (°) <input type="number" id="cantTol" value="0.5" min="0.1" step="0.1" style="width:60px;"></label>
     <button id="clear">Clear all data</button>
-    <p class="note" style="margin-top:12px;">BLE connect and real packets come next. Use Chrome or Edge.</p>
+    <p class="note" style="margin-top:12px;">Use Chrome or Edge for Bluetooth. Version 0.2</p>
   </div>
 </div>
 
 <script>
+const SERVICE_UUID = 'TBD-RAILTRACK-SERVICE-UUID';
+const SHOT_CHAR = 'TBD-SHOT-CHAR-UUID';
+const CMD_CHAR = 'TBD-CMD-CHAR-UUID';
+
 const tabs = document.querySelectorAll('.tab');
 const views = document.querySelectorAll('.view');
 tabs.forEach(t => t.onclick = () => {
@@ -121,54 +151,110 @@ tabs.forEach(t => t.onclick = () => {
 const distanceEl = document.getElementById('distance');
 const targetWidthEl = document.getElementById('targetWidth');
 const readoutEl = document.getElementById('readout');
+const readoutSubEl = document.getElementById('readoutSub');
+const cantEl = document.getElementById('cant');
 const canvas = document.getElementById('target');
 const ctx = canvas.getContext('2d');
 const genBtn = document.getElementById('gen');
 const zeroBtn = document.getElementById('zero');
 const undoBtn = document.getElementById('undo');
+const startBtn = document.getElementById('start');
+const endBtn = document.getElementById('end');
 const shotListEl = document.getElementById('shotList');
 const statsEl = document.getElementById('stats');
 const sessionListEl = document.getElementById('sessionList');
 const demoChk = document.getElementById('demo');
 const demoBadge = document.getElementById('demoBadge');
 const nShotsEl = document.getElementById('nShots');
+const cantTolEl = document.getElementById('cantTol');
+const bannerEl = document.getElementById('banner');
+const unitBtns = document.querySelectorAll('.units button');
 
+let unit = 'moa';
 let shots = [];
 let sessions = JSON.parse(localStorage.getItem('railtrack.sessions.v1') || '[]');
 let currentSessionId = null;
+let sessionActive = false;
+let yaw0 = 0, pitch0 = 0;
+let badPackets = 0;
+
+unitBtns.forEach(b => b.onclick = () => {
+  unitBtns.forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  unit = b.dataset.unit;
+  update();
+});
 
 function degToRad(d) { return d * Math.PI / 180; }
 
-function formatDir(mm, isH) {
-  if (Math.abs(mm) < 1) return isH ? 'C 0' : 'C 0';
-  const abs = Math.abs(mm).toFixed(0);
-  if (isH) return mm > 0 ? '→ R ' + abs : '← L ' + abs;
-  return mm > 0 ? '↑ U ' + abs : '↓ D ' + abs;
+function toUnit(deg, dist) {
+  if (unit === 'moa') return deg * 60;
+  if (unit === 'mil') return deg * Math.PI / 180 * 1000;
+  return dist * Math.tan(degToRad(deg)) * 1000;
+}
+
+function fmt(val) {
+  if (unit === 'mm') return Math.round(val);
+  return val.toFixed(1);
+}
+
+function dirLabel(val, isH) {
+  if (Math.abs(val) < 0.05) return isH ? 'C' : 'C';
+  if (isH) return val > 0 ? '→ R' : '← L';
+  return val > 0 ? '↑ U' : '↓ D';
 }
 
 function update() {
-  const dist = +distanceEl.value || 300;
-  const tw = +targetWidthEl.value || 500;
-  const last = shots[shots.length - 1];
-  let offH = 0, offV = 0;
+  const dist = sessionActive && currentSessionId
+    ? (sessions.find(s => s.id === currentSessionId)?.distance_m || +distanceEl.value)
+    : (+distanceEl.value || 300);
+  const last = shots.filter(s => !s.deleted).slice(-1)[0];
+  let h = 0, v = 0, cant = 0;
   if (last) {
-    offH = dist * Math.tan(degToRad(last.yaw)) * 1000;
-    offV = dist * Math.tan(degToRad(last.pitch)) * 1000;
+    const yaw = last.yaw - yaw0;
+    const pitch = last.pitch - pitch0;
+    h = toUnit(yaw, dist);
+    v = toUnit(pitch, dist);
+    cant = last.cant || 0;
   }
-  readoutEl.innerHTML = formatDir(offH, true) + ' mm &nbsp; ' + formatDir(offV, false) + ' mm';
-  draw(offH, offV, tw);
+  readoutEl.textContent = dirLabel(h, true) + ' ' + fmt(Math.abs(h)) + ' ' + unit.toUpperCase();
+  const other = unit === 'mm' ? ['moa','mil'] : unit === 'moa' ? ['mil','mm'] : ['moa','mm'];
+  readoutSubEl.textContent = other.map(u => {
+    const tmp = unit; unit = u;
+    const val = last ? toUnit(last.yaw - yaw0, dist) : 0;
+    unit = tmp;
+    return u.toUpperCase() + ' ' + (u==='mm'?Math.round(Math.abs(val)):Math.abs(val).toFixed(1));
+  }).join(' · ');
+
+  const tol = +cantTolEl.value || 0.5;
+  const over = Math.abs(cant) > tol;
+  cantEl.textContent = 'Cant ' + Math.abs(cant).toFixed(1) + '° ' + (cant>=0?'R':'L') + ' — ' + (over?'OVER':'OK');
+  cantEl.className = 'cant ' + (over ? 'over' : 'ok');
+
+  draw();
   renderList();
   renderStats();
 }
 
-function draw(offH, offV, targetWidth) {
+function draw() {
+  const dist = sessionActive && currentSessionId
+    ? (sessions.find(s => s.id === currentSessionId)?.distance_m || +distanceEl.value)
+    : (+distanceEl.value || 300);
   const w = canvas.width, h = canvas.height;
   const cx = w/2, cy = h/2;
   const maxR = 130;
   ctx.clearRect(0,0,w,h);
 
-  const half = targetWidth / 2;
-  const scale = maxR / half;
+  const visible = shots.filter(s => !s.deleted).slice(-(+nShotsEl.value||10));
+  if (!visible.length) return;
+
+  const vals = visible.flatMap(s => {
+    const yaw = s.yaw - yaw0;
+    const pitch = s.pitch - pitch0;
+    return [Math.abs(toUnit(yaw, dist)), Math.abs(toUnit(pitch, dist))];
+  });
+  const maxVal = Math.max(0.5, ...vals) * 1.15;
+  const scale = maxR / maxVal;
 
   ctx.strokeStyle = '#333';
   ctx.lineWidth = 1;
@@ -183,24 +269,29 @@ function draw(offH, offV, targetWidth) {
   ctx.moveTo(cx, cy-140); ctx.lineTo(cx, cy+140);
   ctx.stroke();
 
-  // previous shots faded
-  const n = +nShotsEl.value || 10;
-  shots.slice(-n).forEach((s, i) => {
-    const h = dist * Math.tan(degToRad(s.yaw)) * 1000;
-    const v = dist * Math.tan(degToRad(s.pitch)) * 1000;
-    let px = cx + h * scale;
-    let py = cy - v * scale;
+  visible.forEach((s, i) => {
+    const yaw = s.yaw - yaw0;
+    const pitch = s.pitch - pitch0;
+    const hv = toUnit(yaw, dist);
+    const vv = toUnit(pitch, dist);
+    let px = cx + hv * scale;
+    let py = cy - vv * scale;
     const dx = px - cx, dy = py - cy;
     const d = Math.hypot(dx, dy);
+    const isLast = i === visible.length - 1;
     if (d > maxR - 4) {
       const f = (maxR - 4) / d;
-      px = cx + dx * f; py = cy + dy * f;
+      px = cx + dx * f;
+      py = cy + dy * f;
+      // edge arrow label
+      ctx.fillStyle = '#b8b4a8';
+      ctx.font = '11px Share Tech Mono';
+      ctx.fillText(fmt(Math.hypot(hv,vv)), px + 8, py - 4);
     }
-    const alpha = 0.3 + 0.7 * (i / Math.max(1, shots.slice(-n).length - 1));
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = i === shots.slice(-n).length - 1 ? '#f5c518' : '#888';
+    ctx.globalAlpha = isLast ? 1 : 0.4 + 0.5 * (i / visible.length);
+    ctx.fillStyle = isLast ? '#f5c518' : '#888';
     ctx.beginPath();
-    ctx.arc(px, py, i === shots.slice(-n).length - 1 ? 7 : 4, 0, Math.PI*2);
+    ctx.arc(px, py, isLast ? 8 : 4, 0, Math.PI*2);
     ctx.fill();
   });
   ctx.globalAlpha = 1;
@@ -208,27 +299,33 @@ function draw(offH, offV, targetWidth) {
 
 function renderList() {
   const n = +nShotsEl.value || 10;
-  const list = shots.slice(-n).reverse();
+  const list = shots.filter(s => !s.deleted).slice(-n).reverse();
+  const dist = sessionActive && currentSessionId
+    ? (sessions.find(s => s.id === currentSessionId)?.distance_m || +distanceEl.value)
+    : (+distanceEl.value || 300);
   shotListEl.innerHTML = list.map((s, i) => {
-    const dist = +distanceEl.value || 300;
-    const h = dist * Math.tan(degToRad(s.yaw)) * 1000;
-    const v = dist * Math.tan(degToRad(s.pitch)) * 1000;
-    const num = shots.length - i;
-    return `<div class="shot-row">#${num}  ${formatDir(h,true)}  ${formatDir(v,false)} mm</div>`;
+    const yaw = s.yaw - yaw0;
+    const pitch = s.pitch - pitch0;
+    const h = toUnit(yaw, dist);
+    const v = toUnit(pitch, dist);
+    const num = shots.filter(x => !x.deleted).length - i;
+    return `<div class="shot-row">#${num}  ${dirLabel(h,true)} ${fmt(Math.abs(h))}  ${dirLabel(v,false)} ${fmt(Math.abs(v))} ${unit}</div>`;
   }).join('') || '<div class="note">No shots yet</div>';
 }
 
 function renderStats() {
-  if (!shots.length) {
-    statsEl.textContent = 'Shots: 0';
-    return;
-  }
-  const dist = +distanceEl.value || 300;
-  const hs = shots.map(s => dist * Math.tan(degToRad(s.yaw)) * 1000);
-  const vs = shots.map(s => dist * Math.tan(degToRad(s.pitch)) * 1000);
+  const active = shots.filter(s => !s.deleted);
+  if (!active.length) { statsEl.textContent = 'Shots: 0'; return; }
+  const dist = sessionActive && currentSessionId
+    ? (sessions.find(s => s.id === currentSessionId)?.distance_m || +distanceEl.value)
+    : (+distanceEl.value || 300);
+  const hs = active.map(s => toUnit(s.yaw - yaw0, dist));
+  const vs = active.map(s => toUnit(s.pitch - pitch0, dist));
   const meanH = hs.reduce((a,b)=>a+b,0)/hs.length;
   const meanV = vs.reduce((a,b)=>a+b,0)/vs.length;
-  statsEl.textContent = `Shots: ${shots.length}  ·  Mean H ${meanH.toFixed(0)} mm  V ${meanV.toFixed(0)} mm`;
+  const sd = arr => Math.sqrt(arr.reduce((a,v)=>a+(v-arr.reduce((x,y)=>x+y,0)/arr.length)**2,0)/(arr.length-1||1));
+  const es = Math.max(...hs.map((h,i)=>Math.hypot(h-hs[0], vs[i]-vs[0])));
+  statsEl.textContent = `Shots ${active.length} · Mean ${fmt(meanH)} / ${fmt(meanV)} · ES ${fmt(es)} · SD ${fmt(sd(hs))} / ${fmt(sd(vs))}`;
 }
 
 function saveSessions() {
@@ -242,68 +339,132 @@ function renderSessions() {
   }
   sessionListEl.innerHTML = sessions.slice().reverse().map(s => {
     const d = new Date(s.startedAt).toLocaleString();
-    return `<div class="session-row">${d} · ${s.distance_m} m · ${s.shots.length} shots</div>`;
+    const cnt = (s.shots||[]).filter(x => !x.deleted).length;
+    return `<div class="session-row">${d} · ${s.distance_m} m · ${cnt} shots</div>`;
   }).join('');
 }
 
-genBtn.onclick = () => {
-  const yaw = (Math.random() - 0.5) * 1.0;
-  const pitch = (Math.random() - 0.5) * 0.8;
-  shots.push({ yaw, pitch, t: Date.now() });
-  if (!currentSessionId) {
-    currentSessionId = Date.now().toString();
-    sessions.push({
-      id: currentSessionId,
-      startedAt: Date.now(),
-      distance_m: +distanceEl.value || 300,
-      shots: []
-    });
-  }
-  const sess = sessions.find(s => s.id === currentSessionId);
-  if (sess) sess.shots = shots.slice();
+startBtn.onclick = () => {
+  if (sessionActive) return;
+  sessionActive = true;
+  currentSessionId = Date.now().toString();
+  sessions.push({
+    id: currentSessionId,
+    startedAt: Date.now(),
+    profile: 'long-range',
+    mount: 'top',
+    distance_m: +distanceEl.value || 300,
+    unit,
+    shots: []
+  });
+  distanceEl.disabled = true;
+  startBtn.disabled = true;
+  endBtn.disabled = false;
   saveSessions();
   update();
 };
 
+endBtn.onclick = () => {
+  sessionActive = false;
+  distanceEl.disabled = false;
+  startBtn.disabled = false;
+  endBtn.disabled = true;
+  const sess = sessions.find(s => s.id === currentSessionId);
+  if (sess) sess.shots = shots.slice();
+  saveSessions();
+  currentSessionId = null;
+  update();
+  renderSessions();
+};
+
 zeroBtn.onclick = () => {
-  shots = [];
+  const last = shots.filter(s => !s.deleted).slice(-1)[0];
+  if (last) {
+    yaw0 = last.yaw;
+    pitch0 = last.pitch;
+  } else {
+    yaw0 = 0; pitch0 = 0;
+  }
   update();
 };
 
 undoBtn.onclick = () => {
-  shots.pop();
+  const last = shots.filter(s => !s.deleted).slice(-1)[0];
+  if (last) last.deleted = true;
   const sess = sessions.find(s => s.id === currentSessionId);
   if (sess) sess.shots = shots.slice();
   saveSessions();
   update();
 };
 
-distanceEl.oninput = targetWidthEl.oninput = nShotsEl.oninput = update;
+genBtn.onclick = () => {
+  if (!demoChk.checked) return;
+  const yaw = (Math.random() - 0.5) * 0.1;
+  const pitch = (Math.random() - 0.5) * 0.08;
+  const cant = (Math.random() - 0.5) * 0.6;
+  shots.push({ n: shots.length+1, t: Date.now(), yaw, pitch, cant, bat: 85, flags: 2, deleted: false });
+  if (currentSessionId) {
+    const sess = sessions.find(s => s.id === currentSessionId);
+    if (sess) sess.shots = shots.slice();
+    saveSessions();
+  }
+  update();
+};
+
+distanceEl.oninput = targetWidthEl.oninput = nShotsEl.onchange = cantTolEl.oninput = update;
 
 demoChk.onchange = () => {
   demoBadge.style.display = demoChk.checked ? 'inline' : 'none';
+  document.getElementById('demoControls').style.display = demoChk.checked ? 'block' : 'none';
   document.getElementById('status').textContent = demoChk.checked ? 'Not connected · Demo mode' : 'Not connected';
 };
 
-document.getElementById('export').onclick = () => {
-  if (!shots.length) return alert('No shots');
-  const dist = +distanceEl.value || 300;
-  let csv = 'shot,yaw_deg,pitch_deg,h_mm,v_mm\n';
-  shots.forEach((s, i) => {
-    const h = dist * Math.tan(degToRad(s.yaw)) * 1000;
-    const v = dist * Math.tan(degToRad(s.pitch)) * 1000;
-    csv += `${i+1},${s.yaw.toFixed(3)},${s.pitch.toFixed(3)},${h.toFixed(0)},${v.toFixed(0)}\n`;
-  });
-  const blob = new Blob([csv], {type:'text/csv'});
+function downloadCSV(rows, name) {
+  const blob = new Blob([rows], {type:'text/csv'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'railtrack-shots.csv';
+  a.download = name;
   a.click();
+}
+
+document.getElementById('export').onclick = () => {
+  const active = shots.filter(s => !s.deleted);
+  if (!active.length) return alert('No shots');
+  const dist = +distanceEl.value || 300;
+  let csv = 'shot_n,t_ms,yaw_deg,pitch_deg,cant_deg,h_mm,v_mm,h_moa,v_moa,h_mil,v_mil,battery_pct,flags\n';
+  active.forEach(s => {
+    const yaw = s.yaw - yaw0;
+    const pitch = s.pitch - pitch0;
+    const hmm = dist * Math.tan(degToRad(yaw)) * 1000;
+    const vmm = dist * Math.tan(degToRad(pitch)) * 1000;
+    const hmoa = yaw * 60;
+    const vmoa = pitch * 60;
+    const hmil = yaw * Math.PI/180*1000;
+    const vmil = pitch * Math.PI/180*1000;
+    csv += `${s.n},${s.t},${yaw.toFixed(3)},${pitch.toFixed(3)},${(s.cant||0).toFixed(2)},${Math.round(hmm)},${Math.round(vmm)},${hmoa.toFixed(1)},${vmoa.toFixed(1)},${hmil.toFixed(1)},${vmil.toFixed(1)},${s.bat||''},${s.flags||0}\n`;
+  });
+  downloadCSV(csv, 'railtrack-shots.csv');
+};
+
+document.getElementById('exportAll').onclick = () => {
+  let csv = 'session_id,started_at,profile,distance_m,shot_n,t_ms,yaw_deg,pitch_deg,cant_deg,h_mm,v_mm,h_moa,v_moa,h_mil,v_mil,battery_pct,flags\n';
+  sessions.forEach(sess => {
+    (sess.shots||[]).filter(s => !s.deleted).forEach(s => {
+      const yaw = s.yaw;
+      const pitch = s.pitch;
+      const dist = sess.distance_m;
+      const hmm = dist * Math.tan(degToRad(yaw)) * 1000;
+      const vmm = dist * Math.tan(degToRad(pitch)) * 1000;
+      csv += `${sess.id},${sess.startedAt},${sess.profile||''},${dist},${s.n},${s.t},${yaw.toFixed(3)},${pitch.toFixed(3)},${(s.cant||0).toFixed(2)},${Math.round(hmm)},${Math.round(vmm)},${(yaw*60).toFixed(1)},${(pitch*60).toFixed(1)},${(yaw*Math.PI/180*1000).toFixed(1)},${(pitch*Math.PI/180*1000).toFixed(1)},${s.bat||''},${s.flags||0}\n`;
+    });
+  });
+  downloadCSV(csv, 'railtrack-all.csv');
 };
 
 document.getElementById('newSession').onclick = () => {
+  if (sessionActive) endBtn.click();
   shots = [];
-  currentSessionId = null;
+  yaw0 = 0; pitch0 = 0;
   update();
   renderSessions();
 };
@@ -313,6 +474,11 @@ document.getElementById('clear').onclick = () => {
     sessions = [];
     shots = [];
     currentSessionId = null;
+    sessionActive = false;
+    yaw0 = 0; pitch0 = 0;
+    distanceEl.disabled = false;
+    startBtn.disabled = false;
+    endBtn.disabled = true;
     saveSessions();
     update();
     renderSessions();
