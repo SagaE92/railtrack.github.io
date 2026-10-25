@@ -54,14 +54,15 @@
   .live-dot { width:8px; height:8px; border-radius:50%; background:#3d8f4a; display:inline-block; margin-right:4px; }
   #compass img { transition: transform 0.3s ease; }
   @media (max-width: 480px) {
-    body { height:100vh; overflow:hidden; margin:0; padding:12px 10px 16px; }
-    .rifle-stage { margin:4px auto 6px; max-height:78vh; padding:14px 10px 16px; }
+  body { height:100vh; overflow:hidden; margin:0; padding:12px 10px 16px; }
+  .rifle-stage { margin:4px auto 6px; max-height:78vh; padding:14px 10px 16px; }
+    #compass img { width:40px !important; height:40px !important; }
 
-    #recoil { bottom:32%; right:6px; }
-    #time   { bottom:18%; right:6px; }
-    #cons   { bottom:18%; right:68px; }
-    
-  }
+  #compass { top:2%; right:4px; }
+  #recoil { bottom:32%; right:6px; }
+  #time   { bottom:18%; right:6px; }
+  #cons   { bottom:18%; right:68px; }
+}
   button {
   background: #1a1a1a;
   color: #f5c518;
