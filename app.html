@@ -10,7 +10,7 @@
   a { color:#f5c518; text-decoration:none; }
   a:hover { text-decoration:underline; }
   .top { padding:12px 16px 0; }
-  .tabs { display:flex; border-bottom:1px solid #2a261c; }
+  .tabs { display:flex; border-bottom:1px solid #2a261c; position:sticky; top:0; background:#0a0a0a; z-index:2; }
   .tab { flex:1; text-align:center; padding:12px 0; background:none; border:none; color:#b8b4a8; font-family:inherit; font-size:0.95rem; cursor:pointer; }
   .tab.active { color:#f5c518; border-bottom:2px solid #f5c518; }
   .view { display:none; padding:16px; }
@@ -30,20 +30,26 @@
   button {
     background:#1a1a1a; color:#f5c518; border:1px solid #3a3428;
     border-radius:4px; padding:8px 14px; font-family:inherit; cursor:pointer;
+    margin:2px;
   }
   button:hover { background:#2a261c; }
-  .readout { font-size:1.6rem; margin:10px 0; }
+  .readout { font-size:1.8rem; margin:8px 0; line-height:1.2; }
   .readout span { color:#f5c518; }
   #target { display:block; margin:12px auto; background:#111; border-radius:8px; }
   .note { font-size:0.75rem; color:#9a9386; }
   .status { font-size:0.85rem; margin:4px 0 10px; color:#b8b4a8; }
+  .demo-badge { background:#5ec8e6; color:#111; padding:2px 6px; border-radius:3px; font-size:0.7rem; margin-left:6px; }
+  .shot-list { max-height:180px; overflow-y:auto; font-size:0.9rem; }
+  .shot-row { padding:4px 0; border-bottom:1px solid #222; }
+  .stats { font-size:0.85rem; color:#b8b4a8; margin-top:8px; }
+  .session-row { padding:8px 0; border-bottom:1px solid #222; }
 </style>
 </head>
 <body>
 <div class="top">
   <p><a href="index.html">← RailTrack</a></p>
-  <h2 style="margin:4px 0 8px;">RailTrack</h2>
-  <div class="status" id="status">Not connected · Demo</div>
+  <h2 style="margin:4px 0 8px;">RailTrack <span class="demo-badge" id="demoBadge">DEMO</span></h2>
+  <div class="status" id="status">Not connected · Demo mode</div>
 </div>
 
 <div class="tabs">
@@ -54,32 +60,50 @@
 
 <div class="view active" id="view-shoot">
   <div class="panel">
-    <label>Distance (m)</label>
-    <input type="number" id="distance" value="300" min="1" step="10">
-    <label>Target width (mm)</label>
-    <input type="number" id="targetWidth" value="500" min="50" step="50">
-    <div class="readout">H: <span id="offH">0</span> mm · V: <span id="offV">0</span> mm</div>
+    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+      <div>
+        <label>Distance (m)</label>
+        <input type="number" id="distance" value="300" min="1" step="10">
+      </div>
+      <div>
+        <label>Target width (mm)</label>
+        <input type="number" id="targetWidth" value="500" min="50" step="50">
+      </div>
+    </div>
+
+    <div class="readout" id="readout">→ R 0 mm &nbsp; ↑ U 0 mm</div>
     <canvas id="target" width="300" height="300"></canvas>
-    <div style="margin-top:10px;">
+
+    <div>
       <button id="gen">Generate shot</button>
       <button id="zero">Zero</button>
+      <button id="undo">Undo</button>
     </div>
-    <p class="note">Fixed scale. Outer ring = target width. Relative only.</p>
+
+    <div class="stats" id="stats">Shots: 0</div>
+
+    <div class="shot-list" id="shotList"></div>
+
+    <p class="note">Fixed scale. Outer ring = target width. Relative only. Cant: n/a</p>
   </div>
 </div>
 
 <div class="view" id="view-sessions">
   <div class="panel">
-    <p>Sessions list (coming next)</p>
-    <button id="export">Export CSV</button>
+    <h3 style="margin:0 0 8px;">Sessions</h3>
+    <div id="sessionList"><p class="note">No sessions yet.</p></div>
+    <button id="export">Export current CSV</button>
+    <button id="newSession">New session</button>
   </div>
 </div>
 
 <div class="view" id="view-settings">
   <div class="panel">
-    <p>Settings (coming next)</p>
+    <h3 style="margin:0 0 8px;">Settings</h3>
     <label><input type="checkbox" id="demo" checked> Demo mode</label>
-    <button id="clear">Clear data</button>
+    <label>Shots shown <input type="number" id="nShots" value="10" min="5" max="30" style="width:60px;"></label>
+    <button id="clear">Clear all data</button>
+    <p class="note" style="margin-top:12px;">BLE connect and real packets come next. Use Chrome or Edge.</p>
   </div>
 </div>
 
@@ -91,30 +115,50 @@ tabs.forEach(t => t.onclick = () => {
   views.forEach(x => x.classList.remove('active'));
   t.classList.add('active');
   document.getElementById('view-' + t.dataset.tab).classList.add('active');
+  if (t.dataset.tab === 'sessions') renderSessions();
 });
 
 const distanceEl = document.getElementById('distance');
 const targetWidthEl = document.getElementById('targetWidth');
-const offHEl = document.getElementById('offH');
-const offVEl = document.getElementById('offV');
+const readoutEl = document.getElementById('readout');
 const canvas = document.getElementById('target');
 const ctx = canvas.getContext('2d');
 const genBtn = document.getElementById('gen');
 const zeroBtn = document.getElementById('zero');
+const undoBtn = document.getElementById('undo');
+const shotListEl = document.getElementById('shotList');
+const statsEl = document.getElementById('stats');
+const sessionListEl = document.getElementById('sessionList');
+const demoChk = document.getElementById('demo');
+const demoBadge = document.getElementById('demoBadge');
+const nShotsEl = document.getElementById('nShots');
 
-let yaw = 0, pitch = 0;
 let shots = [];
+let sessions = JSON.parse(localStorage.getItem('railtrack.sessions.v1') || '[]');
+let currentSessionId = null;
 
 function degToRad(d) { return d * Math.PI / 180; }
+
+function formatDir(mm, isH) {
+  if (Math.abs(mm) < 1) return isH ? 'C 0' : 'C 0';
+  const abs = Math.abs(mm).toFixed(0);
+  if (isH) return mm > 0 ? '→ R ' + abs : '← L ' + abs;
+  return mm > 0 ? '↑ U ' + abs : '↓ D ' + abs;
+}
 
 function update() {
   const dist = +distanceEl.value || 300;
   const tw = +targetWidthEl.value || 500;
-  const offH = dist * Math.tan(degToRad(yaw)) * 1000;
-  const offV = dist * Math.tan(degToRad(pitch)) * 1000;
-  offHEl.textContent = offH.toFixed(0);
-  offVEl.textContent = offV.toFixed(0);
+  const last = shots[shots.length - 1];
+  let offH = 0, offV = 0;
+  if (last) {
+    offH = dist * Math.tan(degToRad(last.yaw)) * 1000;
+    offV = dist * Math.tan(degToRad(last.pitch)) * 1000;
+  }
+  readoutEl.innerHTML = formatDir(offH, true) + ' mm &nbsp; ' + formatDir(offV, false) + ' mm';
   draw(offH, offV, tw);
+  renderList();
+  renderStats();
 }
 
 function draw(offH, offV, targetWidth) {
@@ -139,40 +183,143 @@ function draw(offH, offV, targetWidth) {
   ctx.moveTo(cx, cy-140); ctx.lineTo(cx, cy+140);
   ctx.stroke();
 
-  let px = cx + offH * scale;
-  let py = cy - offV * scale;
-  const dx = px - cx, dy = py - cy;
-  const d = Math.hypot(dx, dy);
-  if (d > maxR - 6) {
-    const f = (maxR - 6) / d;
-    px = cx + dx * f;
-    py = cy + dy * f;
-  }
+  // previous shots faded
+  const n = +nShotsEl.value || 10;
+  shots.slice(-n).forEach((s, i) => {
+    const h = dist * Math.tan(degToRad(s.yaw)) * 1000;
+    const v = dist * Math.tan(degToRad(s.pitch)) * 1000;
+    let px = cx + h * scale;
+    let py = cy - v * scale;
+    const dx = px - cx, dy = py - cy;
+    const d = Math.hypot(dx, dy);
+    if (d > maxR - 4) {
+      const f = (maxR - 4) / d;
+      px = cx + dx * f; py = cy + dy * f;
+    }
+    const alpha = 0.3 + 0.7 * (i / Math.max(1, shots.slice(-n).length - 1));
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = i === shots.slice(-n).length - 1 ? '#f5c518' : '#888';
+    ctx.beginPath();
+    ctx.arc(px, py, i === shots.slice(-n).length - 1 ? 7 : 4, 0, Math.PI*2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+}
 
-  ctx.fillStyle = '#f5c518';
-  ctx.beginPath();
-  ctx.arc(px, py, 7, 0, Math.PI*2);
-  ctx.fill();
+function renderList() {
+  const n = +nShotsEl.value || 10;
+  const list = shots.slice(-n).reverse();
+  shotListEl.innerHTML = list.map((s, i) => {
+    const dist = +distanceEl.value || 300;
+    const h = dist * Math.tan(degToRad(s.yaw)) * 1000;
+    const v = dist * Math.tan(degToRad(s.pitch)) * 1000;
+    const num = shots.length - i;
+    return `<div class="shot-row">#${num}  ${formatDir(h,true)}  ${formatDir(v,false)} mm</div>`;
+  }).join('') || '<div class="note">No shots yet</div>';
+}
+
+function renderStats() {
+  if (!shots.length) {
+    statsEl.textContent = 'Shots: 0';
+    return;
+  }
+  const dist = +distanceEl.value || 300;
+  const hs = shots.map(s => dist * Math.tan(degToRad(s.yaw)) * 1000);
+  const vs = shots.map(s => dist * Math.tan(degToRad(s.pitch)) * 1000);
+  const meanH = hs.reduce((a,b)=>a+b,0)/hs.length;
+  const meanV = vs.reduce((a,b)=>a+b,0)/vs.length;
+  statsEl.textContent = `Shots: ${shots.length}  ·  Mean H ${meanH.toFixed(0)} mm  V ${meanV.toFixed(0)} mm`;
+}
+
+function saveSessions() {
+  localStorage.setItem('railtrack.sessions.v1', JSON.stringify(sessions));
+}
+
+function renderSessions() {
+  if (!sessions.length) {
+    sessionListEl.innerHTML = '<p class="note">No sessions yet.</p>';
+    return;
+  }
+  sessionListEl.innerHTML = sessions.slice().reverse().map(s => {
+    const d = new Date(s.startedAt).toLocaleString();
+    return `<div class="session-row">${d} · ${s.distance_m} m · ${s.shots.length} shots</div>`;
+  }).join('');
 }
 
 genBtn.onclick = () => {
-  yaw = (Math.random() - 0.5) * 1.0;
-  pitch = (Math.random() - 0.5) * 0.8;
-  shots.push({yaw, pitch, t: Date.now()});
+  const yaw = (Math.random() - 0.5) * 1.0;
+  const pitch = (Math.random() - 0.5) * 0.8;
+  shots.push({ yaw, pitch, t: Date.now() });
+  if (!currentSessionId) {
+    currentSessionId = Date.now().toString();
+    sessions.push({
+      id: currentSessionId,
+      startedAt: Date.now(),
+      distance_m: +distanceEl.value || 300,
+      shots: []
+    });
+  }
+  const sess = sessions.find(s => s.id === currentSessionId);
+  if (sess) sess.shots = shots.slice();
+  saveSessions();
   update();
 };
 
 zeroBtn.onclick = () => {
-  yaw = 0; pitch = 0;
+  shots = [];
   update();
 };
 
-distanceEl.oninput = targetWidthEl.oninput = update;
-update();
+undoBtn.onclick = () => {
+  shots.pop();
+  const sess = sessions.find(s => s.id === currentSessionId);
+  if (sess) sess.shots = shots.slice();
+  saveSessions();
+  update();
+};
 
-// stubs
-document.getElementById('export').onclick = () => alert('CSV export coming');
-document.getElementById('clear').onclick = () => { shots = []; alert('Cleared'); };
+distanceEl.oninput = targetWidthEl.oninput = nShotsEl.oninput = update;
+
+demoChk.onchange = () => {
+  demoBadge.style.display = demoChk.checked ? 'inline' : 'none';
+  document.getElementById('status').textContent = demoChk.checked ? 'Not connected · Demo mode' : 'Not connected';
+};
+
+document.getElementById('export').onclick = () => {
+  if (!shots.length) return alert('No shots');
+  const dist = +distanceEl.value || 300;
+  let csv = 'shot,yaw_deg,pitch_deg,h_mm,v_mm\n';
+  shots.forEach((s, i) => {
+    const h = dist * Math.tan(degToRad(s.yaw)) * 1000;
+    const v = dist * Math.tan(degToRad(s.pitch)) * 1000;
+    csv += `${i+1},${s.yaw.toFixed(3)},${s.pitch.toFixed(3)},${h.toFixed(0)},${v.toFixed(0)}\n`;
+  });
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'railtrack-shots.csv';
+  a.click();
+};
+
+document.getElementById('newSession').onclick = () => {
+  shots = [];
+  currentSessionId = null;
+  update();
+  renderSessions();
+};
+
+document.getElementById('clear').onclick = () => {
+  if (confirm('Clear all sessions?')) {
+    sessions = [];
+    shots = [];
+    currentSessionId = null;
+    saveSessions();
+    update();
+    renderSessions();
+  }
+};
+
+update();
 </script>
 </body>
 </html>
