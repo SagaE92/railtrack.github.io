@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RailTrack App</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Share Tech Mono', monospace; background:#0a0a0a; color:#f3f1ea; margin:0; padding:0; }
+  a { color:#f5c518; text-decoration:none; }
+  a:hover { text-decoration:underline; }
+  .top { padding:12px 16px 0; }
+  .tabs { display:flex; border-bottom:1px solid #2a261c; }
+  .tab { flex:1; text-align:center; padding:12px 0; background:none; border:none; color:#b8b4a8; font-family:inherit; font-size:0.95rem; cursor:pointer; }
+  .tab.active { color:#f5c518; border-bottom:2px solid #f5c518; }
+  .view { display:none; padding:16px; }
+  .view.active { display:block; }
+  .panel {
+    background:#000;
+    border:1px solid #2a261c;
+    border-radius:16px;
+    padding:16px;
+    margin-bottom:12px;
+  }
+  label { display:block; margin:8px 0 4px; font-size:0.85rem; color:#b8b4a8; }
+  input[type=number] {
+    background:#1a1a1a; color:#f3f1ea; border:1px solid #3a3428;
+    border-radius:4px; padding:6px 10px; font-family:inherit; width:100px;
+  }
+  button {
+    background:#1a1a1a; color:#f5c518; border:1px solid #3a3428;
+    border-radius:4px; padding:8px 14px; font-family:inherit; cursor:pointer;
+  }
+  button:hover { background:#2a261c; }
+  .readout { font-size:1.6rem; margin:10px 0; }
+  .readout span { color:#f5c518; }
+  #target { display:block; margin:12px auto; background:#111; border-radius:8px; }
+  .note { font-size:0.75rem; color:#9a9386; }
+  .status { font-size:0.85rem; margin:4px 0 10px; color:#b8b4a8; }
+</style>
+</head>
+<body>
+<div class="top">
+  <p><a href="index.html">← RailTrack</a></p>
+  <h2 style="margin:4px 0 8px;">RailTrack</h2>
+  <div class="status" id="status">Not connected · Demo</div>
+</div>
+
+<div class="tabs">
+  <button class="tab active" data-tab="shoot">Shoot</button>
+  <button class="tab" data-tab="sessions">Sessions</button>
+  <button class="tab" data-tab="settings">Settings</button>
+</div>
+
+<div class="view active" id="view-shoot">
+  <div class="panel">
+    <label>Distance (m)</label>
+    <input type="number" id="distance" value="300" min="1" step="10">
+    <label>Target width (mm)</label>
+    <input type="number" id="targetWidth" value="500" min="50" step="50">
+    <div class="readout">H: <span id="offH">0</span> mm · V: <span id="offV">0</span> mm</div>
+    <canvas id="target" width="300" height="300"></canvas>
+    <div style="margin-top:10px;">
+      <button id="gen">Generate shot</button>
+      <button id="zero">Zero</button>
+    </div>
+    <p class="note">Fixed scale. Outer ring = target width. Relative only.</p>
+  </div>
+</div>
+
+<div class="view" id="view-sessions">
+  <div class="panel">
+    <p>Sessions list (coming next)</p>
+    <button id="export">Export CSV</button>
+  </div>
+</div>
+
+<div class="view" id="view-settings">
+  <div class="panel">
+    <p>Settings (coming next)</p>
+    <label><input type="checkbox" id="demo" checked> Demo mode</label>
+    <button id="clear">Clear data</button>
+  </div>
+</div>
+
+<script>
+const tabs = document.querySelectorAll('.tab');
+const views = document.querySelectorAll('.view');
+tabs.forEach(t => t.onclick = () => {
+  tabs.forEach(x => x.classList.remove('active'));
+  views.forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  document.getElementById('view-' + t.dataset.tab).classList.add('active');
+});
+
+const distanceEl = document.getElementById('distance');
+const targetWidthEl = document.getElementById('targetWidth');
+const offHEl = document.getElementById('offH');
+const offVEl = document.getElementById('offV');
+const canvas = document.getElementById('target');
+const ctx = canvas.getContext('2d');
+const genBtn = document.getElementById('gen');
+const zeroBtn = document.getElementById('zero');
+
+let yaw = 0, pitch = 0;
+let shots = [];
+
+function degToRad(d) { return d * Math.PI / 180; }
+
+function update() {
+  const dist = +distanceEl.value || 300;
+  const tw = +targetWidthEl.value || 500;
+  const offH = dist * Math.tan(degToRad(yaw)) * 1000;
+  const offV = dist * Math.tan(degToRad(pitch)) * 1000;
+  offHEl.textContent = offH.toFixed(0);
+  offVEl.textContent = offV.toFixed(0);
+  draw(offH, offV, tw);
+}
+
+function draw(offH, offV, targetWidth) {
+  const w = canvas.width, h = canvas.height;
+  const cx = w/2, cy = h/2;
+  const maxR = 130;
+  ctx.clearRect(0,0,w,h);
+
+  const half = targetWidth / 2;
+  const scale = maxR / half;
+
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1;
+  for (let i = 1; i <= 4; i++) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, (maxR/4)*i, 0, Math.PI*2);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = '#555';
+  ctx.beginPath();
+  ctx.moveTo(cx-140, cy); ctx.lineTo(cx+140, cy);
+  ctx.moveTo(cx, cy-140); ctx.lineTo(cx, cy+140);
+  ctx.stroke();
+
+  let px = cx + offH * scale;
+  let py = cy - offV * scale;
+  const dx = px - cx, dy = py - cy;
+  const d = Math.hypot(dx, dy);
+  if (d > maxR - 6) {
+    const f = (maxR - 6) / d;
+    px = cx + dx * f;
+    py = cy + dy * f;
+  }
+
+  ctx.fillStyle = '#f5c518';
+  ctx.beginPath();
+  ctx.arc(px, py, 7, 0, Math.PI*2);
+  ctx.fill();
+}
+
+genBtn.onclick = () => {
+  yaw = (Math.random() - 0.5) * 1.0;
+  pitch = (Math.random() - 0.5) * 0.8;
+  shots.push({yaw, pitch, t: Date.now()});
+  update();
+};
+
+zeroBtn.onclick = () => {
+  yaw = 0; pitch = 0;
+  update();
+};
+
+distanceEl.oninput = targetWidthEl.oninput = update;
+update();
+
+// stubs
+document.getElementById('export').onclick = () => alert('CSV export coming');
+document.getElementById('clear').onclick = () => { shots = []; alert('Cleared'); };
+</script>
+</body>
+</html>
