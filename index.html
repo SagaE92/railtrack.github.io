@@ -41,13 +41,13 @@
   #isoHist { top:5%; }
   .extra {
     position:absolute;
-    font-size:15px;
+    font-size:16px;
     color:#b8b4a8;
     font-weight:500;
   }
-  #compass { top:1%; right:8px; }
+  0#compass { top:1%; right:8px; }
   #elev { top:52%; right:8px; }
-  #recoil { bottom:8%; right:8px; }
+  #recoil { bottom:12%; right:8px; }
   #time { bottom:2%; right:8px; }
   #cons { bottom:2%; right:120px; }
   .cal-status { font-size:.8rem; color:#9a9386; margin:2px 0 6px; }
@@ -56,6 +56,11 @@
   @media (max-width: 480px) {
     body { height:100vh; overflow:hidden; margin:0; padding:12px 10px 16px; }
     .rifle-stage { margin:4px auto 6px; max-height:78vh; padding:14px 10px 16px; }
+
+    #recoil { bottom:32%; right:6px; }
+    #time   { bottom:18%; right:6px; }
+    #cons   { bottom:18%; right:68px; }
+    
   }
   button {
   background: #1a1a1a;
@@ -93,7 +98,7 @@ button:hover {
     <img src="rifle-side.jpg" alt="Side view" />
     <canvas id="side"></canvas>
     <div class="hist" id="sideHist"></div>
-    <div class="extra" id="compass">   <img src="compass.png" alt="Compass" style="width:46px; height:58px; display:block; margin:0 auto 2px;">   <span id="compassText">N 142°</span> </div>
+    <div class="extra" id="compass">   <img src="compass.png" alt="Compass" style="width:46px; height:46px; display:block; margin:0 auto 2px;">   <span id="compassText">N 142°</span> </div>
     <div class="extra" id="elev">Elev +2.1°</div>
   </div>
   <div class="view-wrap">
