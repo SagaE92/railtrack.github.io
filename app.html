@@ -42,7 +42,7 @@
   .units button { padding:8px 12px; min-height:44px; }
   .units button.active { background:#f5c518; color:#111; }
   .chips { display:flex; flex-wrap:wrap; gap:6px; margin:6px 0; }
-  .chips button { padding:6px 10px; min-height:36px; font-size:0.8rem; }
+  .chips button { padding:8px 12px; min-height:44px; font-size:0.8rem; }
   .sheet { position:fixed; left:0; right:0; bottom:0; background:#111; border-top:1px solid #2a261c; padding:16px; transform:translateY(100%); transition:transform .25s; z-index:10; max-height:70vh; overflow-y:auto; }
   .sheet.open { transform:translateY(0); }
   .sheet h3 { margin:0 0 8px; }
@@ -193,11 +193,14 @@ let shots = [];
 let sessions = JSON.parse(localStorage.getItem('railtrack.sessions.v1') || '[]');
 let settings = JSON.parse(localStorage.getItem('railtrack.settings.v1') || '{}');
 let currentSessionId = null;
+let lastSessionId = null;
 let sessionActive = false;
 let yaw0 = 0, pitch0 = 0;
 let badPackets = 0;
 let bleDevice = null, bleServer = null, shotChar = null, cmdChar = null;
 let battery = null;
+let retryCount = 0;
+let retryTimer = null;
 
 function saveSettings() {
   settings = {
@@ -262,8 +265,9 @@ function dirLabel(val, isH) {
   return val > 0 ? '↑ U' : '↓ D';
 }
 
-function applyMount(yaw, pitch) {
-  if (mountEl.value === 'under') return { yaw: -yaw, pitch: -pitch };
+function applyMount(yaw, pitch, mount) {
+  const m = mount !== undefined ? mount : mountEl.value;
+  if (m === 'under') return { yaw: -yaw, pitch: -pitch };
   return { yaw, pitch };
 }
 
@@ -338,7 +342,7 @@ function draw() {
     ctx.arc(cx, cy, r, 0, Math.PI*2);
     ctx.stroke();
     const val = (maxVal / 4) * i;
-    ctx.fillText(fmt(val), cx + r - 20, cy - 4);
+    ctx.fillText(fmt(val), cx - 12, cy - r - 4);
   }
   ctx.strokeStyle = '#555';
   ctx.beginPath();
@@ -410,11 +414,91 @@ function renderStats() {
       es = Math.max(es, Math.hypot(hs[i]-hs[j], vs[i]-vs[j]));
     }
   }
-  statsEl.textContent = `Shots ${active.length} · Mean ${dirLabel(meanH,true)} ${fmt(Math.abs(meanH))} / ${dirLabel(meanV,false)} ${fmt(Math.abs(meanV))} · ES ${fmt(es)} · SD ${fmt(sd(hs))} / ${fmt(sd(vs))} · Cant ${meanC.toFixed(1)}°`;
+  const cantDir = Math.abs(meanC) < 0.05 ? '' : (meanC > 0 ? ' R' : ' L');
+  statsEl.textContent = `Shots ${active.length} · Mean ${dirLabel(meanH,true)} ${fmt(Math.abs(meanH))} / ${dirLabel(meanV,false)} ${fmt(Math.abs(meanV))} · ES ${fmt(es)} · SD ${fmt(sd(hs))} / ${fmt(sd(vs))} · Cant ${Math.abs(meanC).toFixed(1)}°${cantDir}`;
 }
 
 function saveSessions() {
   localStorage.setItem('railtrack.sessions.v1', JSON.stringify(sessions));
+}
+
+function showSessionDetail(id) {
+  const sess = sessions.find(s => s.id === id);
+  if (!sess) return;
+  const active = (sess.shots||[]).filter(x => !x.deleted);
+  const dist = sess.distance_m;
+  const y0 = sess.yaw0 || 0;
+  const p0 = sess.pitch0 || 0;
+  const hs = active.map(sh => toUnit(applyMount(sh.yaw - y0, sh.pitch - p0, sess.mount).yaw, dist));
+  const vs = active.map(sh => toUnit(applyMount(sh.yaw - y0, sh.pitch - p0, sess.mount).pitch, dist));
+  const cants = active.map(sh => sh.cant || 0);
+  const meanH = hs.length ? hs.reduce((a,b)=>a+b,0)/hs.length : 0;
+  const meanV = vs.length ? vs.reduce((a,b)=>a+b,0)/vs.length : 0;
+  const meanC = cants.length ? cants.reduce((a,b)=>a+b,0)/cants.length : 0;
+  let es = 0;
+  for (let i=0;i<hs.length;i++) for (let j=i+1;j<hs.length;j++) es = Math.max(es, Math.hypot(hs[i]-hs[j], vs[i]-vs[j]));
+  const cantDir = Math.abs(meanC) < 0.05 ? '' : (meanC > 0 ? ' R' : ' L');
+  const html = `
+    <div class="panel">
+      <h3>${new Date(sess.startedAt).toLocaleString()}</h3>
+      <div>${sess.distance_m} m · ${active.length} shots · ${sess.profile} · ${sess.mount}</div>
+      <div class="stats">Mean ${dirLabel(meanH,true)} ${fmt(Math.abs(meanH))} / ${dirLabel(meanV,false)} ${fmt(Math.abs(meanV))} · ES ${fmt(es)} · Cant ${Math.abs(meanC).toFixed(1)}°${cantDir}</div>
+      <canvas id="sessCanvas" width="280" height="280" style="background:#111;border-radius:8px;margin:8px auto;display:block;"></canvas>
+      <div class="shot-list">${active.slice().reverse().map((s,i) => {
+        const adj = applyMount(s.yaw - y0, s.pitch - p0, sess.mount);
+        const h = toUnit(adj.yaw, dist);
+        const v = toUnit(adj.pitch, dist);
+        return `<div class="shot-row">#${active.length-i} ${dirLabel(h,true)} ${fmt(Math.abs(h))} ${dirLabel(v,false)} ${fmt(Math.abs(v))} ${unit}</div>`;
+      }).join('')}</div>
+      <button type="button" id="sessExport">Export CSV</button>
+      <button type="button" id="sessDelete">Delete session</button>
+      <button type="button" id="sessBack">Back</button>
+    </div>`;
+  sessionListEl.innerHTML = html;
+  const c = document.getElementById('sessCanvas');
+  const cctx = c.getContext('2d');
+  const w = c.width, h = c.height, cx = w/2, cy = h/2, maxR = 110;
+  if (active.length) {
+    const vals = active.flatMap(s => {
+      const adj = applyMount(s.yaw - y0, s.pitch - p0, sess.mount);
+      return [Math.abs(toUnit(adj.yaw, dist)), Math.abs(toUnit(adj.pitch, dist))];
+    });
+    const maxVal = Math.max(0.5, ...vals) * 1.2;
+    const scale = maxR / maxVal;
+    cctx.strokeStyle = '#333';
+    for (let i=1;i<=4;i++) {
+      cctx.beginPath();
+      cctx.arc(cx, cy, (maxR/4)*i, 0, Math.PI*2);
+      cctx.stroke();
+    }
+    active.forEach(s => {
+      const adj = applyMount(s.yaw - y0, s.pitch - p0, sess.mount);
+      const hv = toUnit(adj.yaw, dist);
+      const vv = toUnit(adj.pitch, dist);
+      cctx.fillStyle = '#f5c518';
+      cctx.beginPath();
+      cctx.arc(cx + hv*scale, cy - vv*scale, 5, 0, Math.PI*2);
+      cctx.fill();
+    });
+  }
+  document.getElementById('sessBack').onclick = renderSessions;
+  document.getElementById('sessDelete').onclick = () => {
+    if (confirm('Delete this session?')) {
+      sessions = sessions.filter(s => s.id !== id);
+      saveSessions();
+      renderSessions();
+    }
+  };
+  document.getElementById('sessExport').onclick = () => {
+    let csv = 'session_id,started_at,profile,distance_m,shot_n,t_ms,yaw_deg,pitch_deg,cant_deg,h_mm,v_mm,h_moa,v_moa,h_mil,v_mil,battery_pct,flags,call,impact_h_mm,impact_v_mm\n';
+    active.forEach(s => {
+      const adj = applyMount(s.yaw - y0, s.pitch - p0, sess.mount);
+      const hmm = dist * Math.tan(degToRad(adj.yaw)) * 1000;
+      const vmm = dist * Math.tan(degToRad(adj.pitch)) * 1000;
+      csv += `${sess.id},${sess.startedAt},${sess.profile||''},${dist},${s.n},${s.t},${adj.yaw.toFixed(3)},${adj.pitch.toFixed(3)},${(s.cant||0).toFixed(2)},${Math.round(hmm)},${Math.round(vmm)},${(adj.yaw*60).toFixed(1)},${(adj.pitch*60).toFixed(1)},${(adj.yaw*Math.PI/180*1000).toFixed(1)},${(adj.pitch*Math.PI/180*1000).toFixed(1)},${s.bat||''},${s.flags||0},${s.call||''},${s.impactH||''},${s.impactV||''}\n`;
+    });
+    downloadCSV(csv, `railtrack_${dateStr(sess.startedAt)}_${sess.id}.csv`);
+  };
 }
 
 function renderSessions() {
@@ -429,8 +513,8 @@ function renderSessions() {
     let mean = '', es = '';
     if (cnt) {
       const dist = s.distance_m;
-      const hs = active.map(sh => toUnit(applyMount(sh.yaw - (s.yaw0||0), sh.pitch - (s.pitch0||0)).yaw, dist));
-      const vs = active.map(sh => toUnit(applyMount(sh.yaw - (s.yaw0||0), sh.pitch - (s.pitch0||0)).pitch, dist));
+      const hs = active.map(sh => toUnit(applyMount(sh.yaw - (s.yaw0||0), sh.pitch - (s.pitch0||0), s.mount).yaw, dist));
+      const vs = active.map(sh => toUnit(applyMount(sh.yaw - (s.yaw0||0), sh.pitch - (s.pitch0||0), s.mount).pitch, dist));
       const mh = hs.reduce((a,b)=>a+b,0)/hs.length;
       const mv = vs.reduce((a,b)=>a+b,0)/vs.length;
       let maxes = 0;
@@ -441,22 +525,20 @@ function renderSessions() {
     return `<div class="session-row" data-id="${s.id}">${d} · ${s.distance_m} m · ${cnt} shots${mean}${es}</div>`;
   }).join('');
   sessionListEl.querySelectorAll('.session-row').forEach(row => {
-    row.onclick = () => {
-      const id = row.dataset.id;
-      const sess = sessions.find(s => s.id === id);
-      if (!sess) return;
-      alert(`Session ${new Date(sess.startedAt).toLocaleString()}\n${sess.distance_m} m · ${(sess.shots||[]).filter(x=>!x.deleted).length} shots\nProfile: ${sess.profile} · Mount: ${sess.mount}`);
-    };
+    row.onclick = () => showSessionDetail(row.dataset.id);
   });
 }
 
 function updateStatus() {
-  const bat = battery !== null ? ` · ${battery}%` : '';
+  const bat = (typeof battery === 'number') ? ` · ${battery}%` : '';
   const conn = bleServer ? 'Connected' : 'Not connected';
-  const demo = demoChk.checked ? ' · Demo mode' : '';
+  const demo = (demoChk.checked && !bleServer) ? ' · Demo mode' : '';
   document.getElementById('status').textContent = conn + bat + demo;
-  if (battery !== null && battery < 15) {
-    bannerEl.innerHTML = '<div class="banner amber">Low battery</div>';
+  if (typeof battery === 'number' && battery < 15) {
+    setBanner('Low battery', 'amber');
+  } else if (typeof battery === 'number' && battery >= 15) {
+    const b = bannerEl.querySelector('.banner.amber');
+    if (b && b.textContent.includes('Low battery')) setBanner('');
   }
 }
 
@@ -490,7 +572,7 @@ function openSheet(idx) {
     <div>Raw yaw ${s.yaw.toFixed(2)}° · pitch ${s.pitch.toFixed(2)}° · cant ${(s.cant||0).toFixed(2)}°</div>
     <div>Distance ${dist} m · Recoil ${s.recoil != null ? s.recoil : 'n/a'}</div>
     <div style="margin-top:8px;">Call:
-      <select id="callSel">${['','good','L','R','H','Lo','flinch'].map(c => `<option ${s.call===c?'selected':''}>${c||'—'}</option>`).join('')}</select>
+      <select id="callSel">${['','good','L','R','H','Lo','flinch'].map(c => `<option value="${c}" ${s.call===c?'selected':''}>${c||'—'}</option>`).join('')}</select>
     </div>
     <div>Impact H mm <input type="number" id="impH" value="${s.impactH||''}" style="width:70px;"> V mm <input type="number" id="impV" value="${s.impactV||''}" style="width:70px;"></div>
   `;
@@ -505,14 +587,24 @@ document.getElementById('sheetClose').onclick = () => {
     const call = document.getElementById('callSel')?.value;
     const ih = document.getElementById('impH')?.value;
     const iv = document.getElementById('impV')?.value;
-    if (call) s.call = call;
+    if (call) s.call = call; else delete s.call;
     if (ih !== '') s.impactH = +ih;
     if (iv !== '') s.impactV = +iv;
+    let found = false;
     if (currentSessionId) {
       const sess = sessions.find(x => x.id === currentSessionId);
-      if (sess) sess.shots = shots.slice();
-      saveSessions();
+      if (sess && sess.shots && sess.shots.some(x => x.n === s.n && x.t === s.t)) {
+        sess.shots = shots.slice();
+        found = true;
+      }
     }
+    if (!found) {
+      for (const sess of sessions) {
+        const si = (sess.shots||[]).findIndex(x => x.n === s.n && x.t === s.t);
+        if (si >= 0) { sess.shots[si] = {...s}; found = true; break; }
+      }
+    }
+    if (found) saveSessions();
   }
   sheet.classList.remove('open');
 };
@@ -575,6 +667,7 @@ endBtn.onclick = () => {
     sess.pitch0 = pitch0;
   }
   saveSessions();
+  lastSessionId = currentSessionId;
   currentSessionId = null;
   update();
   renderSessions();
@@ -583,7 +676,6 @@ endBtn.onclick = () => {
 zeroBtn.onclick = async () => {
   yaw0 = 0;
   pitch0 = 0;
-  // zero applies to next shots; store in session
   if (currentSessionId) {
     const sess = sessions.find(s => s.id === currentSessionId);
     if (sess) {
@@ -620,7 +712,6 @@ function addDemoShot() {
     if (sess) sess.shots = shots.slice();
     saveSessions();
   } else {
-    // not in session: show but don't save
     shots.push(shot);
   }
   update();
@@ -628,6 +719,35 @@ function addDemoShot() {
 
 genBtn.onclick = addDemoShot;
 genShootBtn.onclick = addDemoShot;
+
+async function tryReconnect() {
+  if (!bleDevice || retryCount >= 10) {
+    setBanner('Sensor disconnected. <button type="button" id="reconnect">Reconnect</button>', 'red');
+    document.getElementById('reconnect')?.addEventListener('click', () => { retryCount = 0; connectBtn.click(); });
+    return;
+  }
+  retryCount++;
+  try {
+    bleServer = await bleDevice.gatt.connect();
+    const svc = await bleServer.getPrimaryService(SERVICE_UUID);
+    shotChar = await svc.getCharacteristic(SHOT_CHAR);
+    cmdChar = await svc.getCharacteristic(CMD_CHAR);
+    await shotChar.startNotifications();
+    shotChar.addEventListener('characteristicvaluechanged', e => handlePacket(e.target.value));
+    setBanner('');
+    retryCount = 0;
+    updateStatus();
+  } catch (e) {
+    retryTimer = setTimeout(tryReconnect, 3000);
+  }
+}
+function onDisconnect() {
+  setBanner('Sensor disconnected, reconnecting…', 'red');
+  bleServer = null;
+  updateStatus();
+  retryCount = 0;
+  tryReconnect();
+}
 
 connectBtn.onclick = async () => {
   if (!navigator.bluetooth) {
@@ -653,12 +773,7 @@ connectBtn.onclick = async () => {
       battery = (await batChar.readValue()).getUint8(0);
     } catch(e) {}
     setBanner('');
-    bleDevice.addEventListener('gattserverdisconnected', () => {
-      setBanner('Sensor disconnected, reconnecting… <button type="button" id="reconnect">Reconnect</button>', 'red');
-      document.getElementById('reconnect')?.addEventListener('click', () => connectBtn.click());
-      bleServer = null;
-      updateStatus();
-    });
+    bleDevice.addEventListener('gattserverdisconnected', onDisconnect);
     updateStatus();
   } catch (e) {
     setBanner((e.message || 'Permission denied') + ' <button type="button" id="retry">Retry</button>', 'red');
@@ -683,21 +798,24 @@ window.handlePacket = function(dv) {
         const sess = sessions.find(s => s.id === currentSessionId);
         if (sess) sess.shots = shots.slice();
         saveSessions();
+      } else {
+        setBanner('Shot received - press Start session to record', 'info');
       }
       update();
       return;
     }
-    // try JSON
     const text = new TextDecoder().decode(dv);
     const pkt = JSON.parse(text);
     if (typeof pkt.yaw === 'number') {
-      battery = pkt.bat;
+      if (typeof pkt.bat === 'number') battery = pkt.bat;
       const shot = { n: pkt.n||shots.length+1, t: pkt.t||Date.now(), yaw: pkt.yaw, pitch: pkt.pitch, cant: pkt.cant||0, bat: pkt.bat, flags: pkt.flags||0, deleted: false };
       if (sessionActive) {
         shots.push(shot);
         const sess = sessions.find(s => s.id === currentSessionId);
         if (sess) sess.shots = shots.slice();
         saveSessions();
+      } else {
+        setBanner('Shot received - press Start session to record', 'info');
       }
       update();
       return;
@@ -720,34 +838,36 @@ function dateStr(ts) {
 }
 
 document.getElementById('export').onclick = () => {
-  if (!currentSessionId && !shots.length) return alert('No session');
-  const sess = sessions.find(s => s.id === currentSessionId) || { id: 'current', startedAt: Date.now(), profile: profileEl.value, distance_m: getDist(), yaw0, pitch0, shots };
-  const active = (sess.shots || shots).filter(s => !s.deleted);
+  const sid = currentSessionId || lastSessionId;
+  if (!sid) return alert('No session');
+  const sess = sessions.find(s => s.id === sid);
+  if (!sess) return alert('Session not found');
+  const active = (sess.shots || []).filter(s => !s.deleted);
   if (!active.length) return alert('No shots');
   const dist = sess.distance_m;
   const y0 = sess.yaw0 || 0;
   const p0 = sess.pitch0 || 0;
-  let csv = 'session_id,started_at,profile,distance_m,shot_n,t_ms,yaw_deg,pitch_deg,cant_deg,h_mm,v_mm,h_moa,v_moa,h_mil,v_mil,battery_pct,flags\n';
+  let csv = 'session_id,started_at,profile,distance_m,shot_n,t_ms,yaw_deg,pitch_deg,cant_deg,h_mm,v_mm,h_moa,v_moa,h_mil,v_mil,battery_pct,flags,call,impact_h_mm,impact_v_mm\n';
   active.forEach(s => {
-    const adj = applyMount(s.yaw - y0, s.pitch - p0);
+    const adj = applyMount(s.yaw - y0, s.pitch - p0, sess.mount);
     const hmm = dist * Math.tan(degToRad(adj.yaw)) * 1000;
     const vmm = dist * Math.tan(degToRad(adj.pitch)) * 1000;
-    csv += `${sess.id},${sess.startedAt},${sess.profile||''},${dist},${s.n},${s.t},${adj.yaw.toFixed(3)},${adj.pitch.toFixed(3)},${(s.cant||0).toFixed(2)},${Math.round(hmm)},${Math.round(vmm)},${(adj.yaw*60).toFixed(1)},${(adj.pitch*60).toFixed(1)},${(adj.yaw*Math.PI/180*1000).toFixed(1)},${(adj.pitch*Math.PI/180*1000).toFixed(1)},${s.bat||''},${s.flags||0}\n`;
+    csv += `${sess.id},${sess.startedAt},${sess.profile||''},${dist},${s.n},${s.t},${adj.yaw.toFixed(3)},${adj.pitch.toFixed(3)},${(s.cant||0).toFixed(2)},${Math.round(hmm)},${Math.round(vmm)},${(adj.yaw*60).toFixed(1)},${(adj.pitch*60).toFixed(1)},${(adj.yaw*Math.PI/180*1000).toFixed(1)},${(adj.pitch*Math.PI/180*1000).toFixed(1)},${s.bat||''},${s.flags||0},${s.call||''},${s.impactH||''},${s.impactV||''}\n`;
   });
   downloadCSV(csv, `railtrack_${dateStr(sess.startedAt)}_${sess.id}.csv`);
 };
 
 document.getElementById('exportAll').onclick = () => {
-  let csv = 'session_id,started_at,profile,distance_m,shot_n,t_ms,yaw_deg,pitch_deg,cant_deg,h_mm,v_mm,h_moa,v_moa,h_mil,v_mil,battery_pct,flags\n';
+  let csv = 'session_id,started_at,profile,distance_m,shot_n,t_ms,yaw_deg,pitch_deg,cant_deg,h_mm,v_mm,h_moa,v_moa,h_mil,v_mil,battery_pct,flags,call,impact_h_mm,impact_v_mm\n';
   sessions.forEach(sess => {
     const y0 = sess.yaw0 || 0;
     const p0 = sess.pitch0 || 0;
     (sess.shots||[]).filter(s => !s.deleted).forEach(s => {
-      const adj = applyMount(s.yaw - y0, s.pitch - p0);
+      const adj = applyMount(s.yaw - y0, s.pitch - p0, sess.mount);
       const dist = sess.distance_m;
       const hmm = dist * Math.tan(degToRad(adj.yaw)) * 1000;
       const vmm = dist * Math.tan(degToRad(adj.pitch)) * 1000;
-      csv += `${sess.id},${sess.startedAt},${sess.profile||''},${dist},${s.n},${s.t},${adj.yaw.toFixed(3)},${adj.pitch.toFixed(3)},${(s.cant||0).toFixed(2)},${Math.round(hmm)},${Math.round(vmm)},${(adj.yaw*60).toFixed(1)},${(adj.pitch*60).toFixed(1)},${(adj.yaw*Math.PI/180*1000).toFixed(1)},${(adj.pitch*Math.PI/180*1000).toFixed(1)},${s.bat||''},${s.flags||0}\n`;
+      csv += `${sess.id},${sess.startedAt},${sess.profile||''},${dist},${s.n},${s.t},${adj.yaw.toFixed(3)},${adj.pitch.toFixed(3)},${(s.cant||0).toFixed(2)},${Math.round(hmm)},${Math.round(vmm)},${(adj.yaw*60).toFixed(1)},${(adj.pitch*60).toFixed(1)},${(adj.yaw*Math.PI/180*1000).toFixed(1)},${(adj.pitch*Math.PI/180*1000).toFixed(1)},${s.bat||''},${s.flags||0},${s.call||''},${s.impactH||''},${s.impactV||''}\n`;
     });
   });
   downloadCSV(csv, `railtrack_all_${dateStr(Date.now())}.csv`);
@@ -758,6 +878,7 @@ document.getElementById('clear').onclick = () => {
     sessions = [];
     shots = [];
     currentSessionId = null;
+    lastSessionId = null;
     sessionActive = false;
     yaw0 = 0; pitch0 = 0;
     distanceEl.disabled = false;
