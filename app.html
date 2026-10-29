@@ -123,6 +123,7 @@
     <label>Shots shown <select id="nShots"><option>3</option><option>5</option><option selected>10</option><option>20</option></select></label>
     <label>Cant tolerance (°) <input type="number" id="cantTol" value="0.5" min="0.1" step="0.1" style="width:60px;"></label>
     <label>Track size (mm / 100 m) <input type="number" id="trackSize" value="200" min="50" step="50" style="width:70px;"></label>
+    <label>Smooth samples (live aim) <input type="number" id="smoothN" value="4" min="1" max="12" step="1" style="width:60px;"></label>
     <label>Default unit <select id="defUnit"><option value="moa">MOA</option><option value="mil">mil</option><option value="mm">mm</option></select></label>
     <button id="clear">Clear all data</button>
     <p class="note" style="margin-top:12px;">About — RailTrack v0.3 · Use Chrome or Edge for Bluetooth</p>
@@ -204,6 +205,8 @@ let retryTimer = null;
 let liveSensors = false;
 let liveYaw = 0;
 let livePitch = 0;
+let yawBuf = [];
+let pitchBuf = [];
 let orientZeroGamma = null;
 let orientZeroBeta = null;
 let rawGamma = 0;
@@ -226,6 +229,7 @@ function saveSettings() {
     cantTol: cantTolEl.value,
     defUnit: document.getElementById('defUnit').value,
     trackSize: document.getElementById('trackSize').value,
+    smoothN: document.getElementById('smoothN').value,
     rawLog: document.getElementById('rawLog').checked
   };
   localStorage.setItem('railtrack.settings.v1', JSON.stringify(settings));
@@ -238,6 +242,7 @@ function loadSettings() {
   if (settings.nShots) nShotsEl.value = settings.nShots;
   if (settings.cantTol) cantTolEl.value = settings.cantTol;
   if (settings.trackSize) document.getElementById('trackSize').value = settings.trackSize;
+  if (settings.smoothN) document.getElementById('smoothN').value = settings.smoothN;
   if (settings.defUnit) {
     unit = settings.defUnit;
     unitBtns.forEach(b => b.classList.toggle('active', b.dataset.unit === unit));
@@ -600,9 +605,17 @@ function startLiveSensors() {
       while (dGamma > 180) dGamma -= 360;
       while (dGamma < -180) dGamma += 360;
       let dBeta = rawBeta - orientZeroBeta;
-      // direct, no lag or deadzone
-      liveYaw = -dGamma * 0.08;
-      livePitch = dBeta * 0.08;
+      // raw values
+      const rawY = -dGamma * 0.08;
+      const rawP = dBeta * 0.08;
+      // moving average only for live circle
+      const n = Math.max(1, Math.min(12, +(document.getElementById('smoothN')?.value) || 4));
+      yawBuf.push(rawY);
+      pitchBuf.push(rawP);
+      if (yawBuf.length > n) yawBuf.shift();
+      if (pitchBuf.length > n) pitchBuf.shift();
+      liveYaw = yawBuf.reduce((a,b)=>a+b,0) / yawBuf.length;
+      livePitch = pitchBuf.reduce((a,b)=>a+b,0) / pitchBuf.length;
       if (sessionActive) draw();
     };
     window.addEventListener('deviceorientation', orientationListener);
@@ -781,6 +794,8 @@ zeroBtn.onclick = async () => {
   zeroCount = 0;
   liveYaw = 0;
   livePitch = 0;
+  yawBuf = [];
+  pitchBuf = [];
   yaw0 = 0;
   pitch0 = 0;
   if (currentSessionId) {
@@ -1014,6 +1029,7 @@ document.getElementById('rawLog').onchange = saveSettings;
 distanceEl.oninput = update;
 document.getElementById('plotOverride').oninput = update;
 document.getElementById('trackSize').oninput = () => { update(); saveSettings(); };
+document.getElementById('smoothN').oninput = () => { yawBuf = []; pitchBuf = []; saveSettings(); };
 
 loadSettings();
 update();
