@@ -71,7 +71,10 @@
       </div>
       <div style="display:flex; flex-direction:column;">
         <label>Plot size (mm)</label>
-        <input type="number" id="plotOverride" placeholder="auto" min="10" step="10" style="width:90px; height:44px; box-sizing:border-box; padding:0 8px;">
+        <div style="display:flex; gap:6px; align-items:center;">
+          <input type="number" id="plotOverride" placeholder="auto" min="10" step="10" style="width:90px; height:44px; box-sizing:border-box; padding:0 8px;">
+          <button id="connect" style="height:44px; padding:0 12px;">Connect</button>
+        </div>
       </div>
       <div style="display:flex; flex-direction:column;">
         <label>Units</label>
@@ -89,12 +92,12 @@
 
     <canvas id="target" width="300" height="300"></canvas>
 
-    <div>
-      <button id="connect">Connect sensor</button>
+    <div style="margin-top:8px;">
       <button id="start">Start session</button>
       <button id="end" disabled>End session</button>
       <button id="zero">Zero</button>
-      <button id="undo">Undo</button>
+    </div>
+    <div style="margin-top:4px;">
       <button id="genShoot" style="display:none;">Generate shot</button>
     </div>
 
@@ -170,7 +173,7 @@ const canvas = document.getElementById('target');
 const ctx = canvas.getContext('2d');
 const genShootBtn = document.getElementById('genShoot');
 const zeroBtn = document.getElementById('zero');
-const undoBtn = document.getElementById('undo');
+const undoBtn = document.getElementById('undo'); // removed from UI
 const startBtn = document.getElementById('start');
 const endBtn = document.getElementById('end');
 const connectBtn = document.getElementById('connect');
@@ -813,7 +816,7 @@ zeroBtn.onclick = async () => {
   update();
 };
 
-undoBtn.onclick = () => {
+if (undoBtn) undoBtn.onclick = () => {
   const last = shots.filter(s => !s.deleted).slice(-1)[0];
   if (last) last.deleted = true;
   if (currentSessionId) {
