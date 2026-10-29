@@ -753,20 +753,6 @@ startBtn.onclick = () => {
   endBtn.disabled = false;
   saveSessions();
   startLiveSensors();
-  // Auto-zero after ~2 s: recenter on wherever the phone is held
-  setTimeout(() => {
-    if (sessionActive && liveSensors) {
-      zeroPending = true;
-      zeroSumG = 0;
-      zeroSumB = 0;
-      zeroCount = 0;
-      liveYaw = 0;
-      livePitch = 0;
-      setBanner('Zero set (held still)', 'info');
-      setTimeout(() => { if (bannerEl.querySelector('.banner.info')?.textContent.includes('Zero set')) setBanner(''); }, 1500);
-      update();
-    }
-  }, 2200);
   update();
 };
 
