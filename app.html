@@ -64,15 +64,14 @@
 
 <div class="view active" id="view-shoot">
   <div class="panel">
-    <div style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end;">
-      <div>
+    <div style="display:flex; gap:16px; align-items:flex-end; flex-wrap:wrap;">
+      <div style="display:flex; flex-direction:column;">
         <label>Distance (m)</label>
-        <input type="number" id="distance" value="300" min="1" step="10">
-        
+        <input type="number" id="distance" value="300" min="1" step="10" style="width:110px; height:44px; box-sizing:border-box; padding:0 10px;">
       </div>
-      <div>
+      <div style="display:flex; flex-direction:column;">
         <label>Units</label>
-        <div class="units">
+        <div class="units" style="margin:0; height:44px; align-items:center;">
           <button type="button" data-unit="moa">MOA</button>
           <button type="button" data-unit="mil">mil</button>
           <button type="button" data-unit="mm" class="active">mm</button>
@@ -202,6 +201,9 @@ let liveYaw = 0;
 let livePitch = 0;
 let orientZeroGamma = null;
 let orientZeroBeta = null;
+let orientSamples = 0;
+let orientSumGamma = 0;
+let orientSumBeta = 0;
 let orientationListener = null;
 
 function saveSettings() {
@@ -312,20 +314,19 @@ function draw() {
 
   const visible = shots.filter(s => !s.deleted).slice(-(+nShotsEl.value||10));
 
-  // Always draw rings + crosshair
-  let maxVal = 1.0; // default scale when no shots
+  // Always draw rings + crosshair. Use a stable default scale.
+  let maxVal = 2.0; // comfortable default (mm or MOA)
   if (visible.length) {
     const vals = visible.flatMap(s => {
       const adj = applyMount(s.yaw - yaw0, s.pitch - pitch0);
       return [Math.abs(toUnit(adj.yaw, dist)), Math.abs(toUnit(adj.pitch, dist))];
     });
-    maxVal = Math.max(0.5, ...vals) * 1.2;
+    maxVal = Math.max(2.0, ...vals) * 1.15;
   }
-  // include live aim in scale if session running
-  if (sessionActive && liveSensors && (Math.abs(liveYaw) > 0.01 || Math.abs(livePitch) > 0.01)) {
+  if (sessionActive && liveSensors) {
     const lh = Math.abs(toUnit(liveYaw, dist));
     const lv = Math.abs(toUnit(livePitch, dist));
-    maxVal = Math.max(maxVal, lh * 1.2, lv * 1.2, 0.5);
+    maxVal = Math.max(maxVal, lh * 1.15, lv * 1.15, 2.0);
   }
   const scale = maxR / maxVal;
 
@@ -559,22 +560,30 @@ function startLiveSensors() {
   if (liveSensors) return;
   orientZeroGamma = null;
   orientZeroBeta = null;
+  orientSamples = 0;
+  orientSumGamma = 0;
+  orientSumBeta = 0;
   const start = () => {
     liveSensors = true;
     orientationListener = (e) => {
-      // Phone upright in hand. Use relative orientation from session start to avoid wrap jumps.
       const gamma = e.gamma || 0;
       const beta = e.beta || 90;
-      if (orientZeroGamma === null) {
-        orientZeroGamma = gamma;
-        orientZeroBeta = beta;
+      // Collect first few samples to set a stable zero (avoids first-event nonsense)
+      if (orientSamples < 5) {
+        orientSumGamma += gamma;
+        orientSumBeta += beta;
+        orientSamples++;
+        if (orientSamples === 5) {
+          orientZeroGamma = orientSumGamma / 5;
+          orientZeroBeta = orientSumBeta / 5;
+        }
+        return;
       }
-      // Normalize gamma difference to -180..180 to avoid jumps
       let dGamma = gamma - orientZeroGamma;
       while (dGamma > 180) dGamma -= 360;
       while (dGamma < -180) dGamma += 360;
-      liveYaw = -dGamma * 0.12;                 // inverted left-right, relative
-      livePitch = (beta - orientZeroBeta) * 0.12; // relative to upright at start
+      liveYaw = -dGamma * 0.1;
+      livePitch = (beta - orientZeroBeta) * 0.1;
       if (sessionActive) draw();
     };
     window.addEventListener('deviceorientation', orientationListener);
