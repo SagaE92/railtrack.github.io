@@ -201,6 +201,8 @@ let liveYaw = 0;
 let livePitch = 0;
 let orientZeroGamma = null;
 let orientZeroBeta = null;
+let rawGamma = 0;
+let rawBeta = 90;
 let orientSamples = 0;
 let orientSumGamma = 0;
 let orientSumBeta = 0;
@@ -566,24 +568,19 @@ function startLiveSensors() {
   const start = () => {
     liveSensors = true;
     orientationListener = (e) => {
-      const gamma = e.gamma || 0;
-      const beta = e.beta || 90;
-      // Collect first few samples to set a stable zero (avoids first-event nonsense)
-      if (orientSamples < 5) {
-        orientSumGamma += gamma;
-        orientSumBeta += beta;
-        orientSamples++;
-        if (orientSamples === 5) {
-          orientZeroGamma = orientSumGamma / 5;
-          orientZeroBeta = orientSumBeta / 5;
-        }
-        return;
+      rawGamma = e.gamma || 0;
+      rawBeta = e.beta || 90;
+      if (orientZeroGamma === null) {
+        // first valid sample becomes provisional zero
+        orientZeroGamma = rawGamma;
+        orientZeroBeta = rawBeta;
       }
-      let dGamma = gamma - orientZeroGamma;
+      let dGamma = rawGamma - orientZeroGamma;
       while (dGamma > 180) dGamma -= 360;
       while (dGamma < -180) dGamma += 360;
-      liveYaw = -dGamma * 0.1;
-      livePitch = (beta - orientZeroBeta) * 0.1;
+      // lower sensitivity so small tilts don't fling the circle
+      liveYaw = -dGamma * 0.06;
+      livePitch = (rawBeta - orientZeroBeta) * 0.06;
       if (sessionActive) draw();
     };
     window.addEventListener('deviceorientation', orientationListener);
@@ -732,16 +729,13 @@ startBtn.onclick = () => {
   endBtn.disabled = false;
   saveSessions();
   startLiveSensors();
-  // Auto-zero after ~2 s of holding still
+  // Auto-zero after ~2 s: recenter on wherever the phone is held
   setTimeout(() => {
-    if (sessionActive && liveSensors && orientZeroGamma !== null) {
-      yaw0 = liveYaw;
-      pitch0 = livePitch;
-      if (currentSessionId) {
-        const sess = sessions.find(s => s.id === currentSessionId);
-        if (sess) { sess.yaw0 = yaw0; sess.pitch0 = pitch0; }
-        saveSessions();
-      }
+    if (sessionActive && liveSensors) {
+      orientZeroGamma = rawGamma;
+      orientZeroBeta = rawBeta;
+      liveYaw = 0;
+      livePitch = 0;
       setBanner('Zero set (held still)', 'info');
       setTimeout(() => { if (bannerEl.querySelector('.banner.info')?.textContent.includes('Zero set')) setBanner(''); }, 1500);
       update();
@@ -770,18 +764,25 @@ endBtn.onclick = () => {
 };
 
 zeroBtn.onclick = async () => {
+  // Recenter on current phone orientation
+  orientZeroGamma = rawGamma;
+  orientZeroBeta = rawBeta;
+  liveYaw = 0;
+  livePitch = 0;
   yaw0 = 0;
   pitch0 = 0;
   if (currentSessionId) {
     const sess = sessions.find(s => s.id === currentSessionId);
     if (sess) {
-      sess.yaw0 = yaw0;
-      sess.pitch0 = pitch0;
+      sess.yaw0 = 0;
+      sess.pitch0 = 0;
     }
   }
   if (cmdChar) {
     try { await cmdChar.writeValue(new Uint8Array([0x01])); } catch(e) {}
   }
+  setBanner('Zero set', 'info');
+  setTimeout(() => { if (bannerEl.querySelector('.banner.info')?.textContent.includes('Zero set')) setBanner(''); }, 1200);
   update();
 };
 
