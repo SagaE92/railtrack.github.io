@@ -203,6 +203,10 @@ let orientZeroGamma = null;
 let orientZeroBeta = null;
 let rawGamma = 0;
 let rawBeta = 90;
+let zeroPending = false;
+let zeroSumG = 0;
+let zeroSumB = 0;
+let zeroCount = 0;
 let orientSamples = 0;
 let orientSumGamma = 0;
 let orientSumBeta = 0;
@@ -571,16 +575,36 @@ function startLiveSensors() {
       rawGamma = e.gamma || 0;
       rawBeta = e.beta || 90;
       if (orientZeroGamma === null) {
-        // first valid sample becomes provisional zero
         orientZeroGamma = rawGamma;
         orientZeroBeta = rawBeta;
+      }
+      // If a zero was just requested, collect a few samples and lock it
+      if (zeroPending) {
+        zeroSumG += rawGamma;
+        zeroSumB += rawBeta;
+        zeroCount++;
+        if (zeroCount >= 4) {
+          orientZeroGamma = zeroSumG / zeroCount;
+          orientZeroBeta = zeroSumB / zeroCount;
+          zeroPending = false;
+          liveYaw = 0;
+          livePitch = 0;
+        }
+        if (sessionActive) draw();
+        return;
       }
       let dGamma = rawGamma - orientZeroGamma;
       while (dGamma > 180) dGamma -= 360;
       while (dGamma < -180) dGamma += 360;
-      // lower sensitivity so small tilts don't fling the circle
-      liveYaw = -dGamma * 0.06;
-      livePitch = (rawBeta - orientZeroBeta) * 0.06;
+      let dBeta = rawBeta - orientZeroBeta;
+      // deadzone ~1.5° so tiny noise doesn't move it
+      if (Math.abs(dGamma) < 1.5) dGamma = 0;
+      if (Math.abs(dBeta) < 1.5) dBeta = 0;
+      const targetYaw = -dGamma * 0.05;
+      const targetPitch = dBeta * 0.05;
+      // low-pass so it doesn't jump
+      liveYaw = liveYaw * 0.7 + targetYaw * 0.3;
+      livePitch = livePitch * 0.7 + targetPitch * 0.3;
       if (sessionActive) draw();
     };
     window.addEventListener('deviceorientation', orientationListener);
@@ -732,8 +756,10 @@ startBtn.onclick = () => {
   // Auto-zero after ~2 s: recenter on wherever the phone is held
   setTimeout(() => {
     if (sessionActive && liveSensors) {
-      orientZeroGamma = rawGamma;
-      orientZeroBeta = rawBeta;
+      zeroPending = true;
+      zeroSumG = 0;
+      zeroSumB = 0;
+      zeroCount = 0;
       liveYaw = 0;
       livePitch = 0;
       setBanner('Zero set (held still)', 'info');
@@ -764,9 +790,11 @@ endBtn.onclick = () => {
 };
 
 zeroBtn.onclick = async () => {
-  // Recenter on current phone orientation
-  orientZeroGamma = rawGamma;
-  orientZeroBeta = rawBeta;
+  // Request sticky zero: average next samples so it stays centred
+  zeroPending = true;
+  zeroSumG = 0;
+  zeroSumB = 0;
+  zeroCount = 0;
   liveYaw = 0;
   livePitch = 0;
   yaw0 = 0;
