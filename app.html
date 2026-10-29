@@ -70,6 +70,10 @@
         <input type="number" id="distance" value="300" min="1" step="10" style="width:110px; height:44px; box-sizing:border-box; padding:0 10px;">
       </div>
       <div style="display:flex; flex-direction:column;">
+        <label>Plot size (mm)</label>
+        <input type="number" id="plotOverride" placeholder="auto" min="10" step="10" style="width:90px; height:44px; box-sizing:border-box; padding:0 8px;">
+      </div>
+      <div style="display:flex; flex-direction:column;">
         <label>Units</label>
         <div class="units" style="margin:0; height:44px; align-items:center;">
           <button type="button" data-unit="moa">MOA</button>
@@ -96,7 +100,7 @@
 
     <div class="stats" id="stats">Shots: 0</div>
     <div class="shot-list" id="shotList"></div>
-    <p class="note">Auto-scale. Edge arrows for off-scale. Relative only.</p>
+    <p class="note">Fixed scale. Rings in mm. Override plot size on main page.</p>
   </div>
 </div>
 
@@ -118,6 +122,7 @@
     <div id="demoControls" style="margin:8px 0; display:none;"></div>
     <label>Shots shown <select id="nShots"><option>3</option><option>5</option><option selected>10</option><option>20</option></select></label>
     <label>Cant tolerance (°) <input type="number" id="cantTol" value="0.5" min="0.1" step="0.1" style="width:60px;"></label>
+    <label>Track size (mm / 100 m) <input type="number" id="trackSize" value="200" min="50" step="50" style="width:70px;"></label>
     <label>Default unit <select id="defUnit"><option value="moa">MOA</option><option value="mil">mil</option><option value="mm">mm</option></select></label>
     <button id="clear">Clear all data</button>
     <p class="note" style="margin-top:12px;">About — RailTrack v0.3 · Use Chrome or Edge for Bluetooth</p>
@@ -220,6 +225,7 @@ function saveSettings() {
     nShots: nShotsEl.value,
     cantTol: cantTolEl.value,
     defUnit: document.getElementById('defUnit').value,
+    trackSize: document.getElementById('trackSize').value,
     rawLog: document.getElementById('rawLog').checked
   };
   localStorage.setItem('railtrack.settings.v1', JSON.stringify(settings));
@@ -231,6 +237,7 @@ function loadSettings() {
   if (settings.demo !== undefined) demoChk.checked = settings.demo;
   if (settings.nShots) nShotsEl.value = settings.nShots;
   if (settings.cantTol) cantTolEl.value = settings.cantTol;
+  if (settings.trackSize) document.getElementById('trackSize').value = settings.trackSize;
   if (settings.defUnit) {
     unit = settings.defUnit;
     unitBtns.forEach(b => b.classList.toggle('active', b.dataset.unit === unit));
@@ -320,21 +327,17 @@ function draw() {
 
   const visible = shots.filter(s => !s.deleted).slice(-(+nShotsEl.value||10));
 
-  // Always draw rings + crosshair. Use a stable default scale.
-  let maxVal = 2.0; // comfortable default (mm or MOA)
-  if (visible.length) {
-    const vals = visible.flatMap(s => {
-      const adj = applyMount(s.yaw - yaw0, s.pitch - pitch0);
-      return [Math.abs(toUnit(adj.yaw, dist)), Math.abs(toUnit(adj.pitch, dist))];
-    });
-    maxVal = Math.max(2.0, ...vals) * 1.15;
-  }
-  if (sessionActive && liveSensors) {
-    const lh = Math.abs(toUnit(liveYaw, dist));
-    const lv = Math.abs(toUnit(livePitch, dist));
-    maxVal = Math.max(maxVal, lh * 1.15, lv * 1.15, 2.0);
-  }
-  const scale = maxR / maxVal;
+  // Fixed scale: track size (mm per 100 m) or main-page override
+  const trackPer100 = +(document.getElementById('trackSize')?.value) || 200;
+  const override = +(document.getElementById('plotOverride')?.value);
+  let maxValMm = override > 0 ? override : (trackPer100 / 100) * dist;
+  if (maxValMm < 10) maxValMm = 10;
+  // convert maxVal to current unit for ring labels and positioning
+  let maxVal = maxValMm;
+  if (unit === 'moa') maxVal = maxValMm / (dist * Math.tan(degToRad(1/60)) * 1000) * (1/60) * 60; // approx
+  if (unit === 'mil') maxVal = maxValMm / (dist * Math.tan(degToRad(0.05625)) * 1000) * 0.05625 * (Math.PI/180*1000);
+  // simpler: always work in mm for scale, convert positions
+  const scale = maxR / maxValMm;
 
   ctx.strokeStyle = '#333';
   ctx.lineWidth = 1;
@@ -345,8 +348,8 @@ function draw() {
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI*2);
     ctx.stroke();
-    const val = (maxVal / 4) * i;
-    ctx.fillText(fmt(val), cx - 12, cy - r - 4);
+    const valMm = (maxValMm / 4) * i;
+    ctx.fillText(Math.round(valMm), cx - 14, cy - r - 4);
   }
   ctx.strokeStyle = '#555';
   ctx.beginPath();
@@ -359,8 +362,8 @@ function draw() {
 
   visible.forEach((s, i) => {
     const adj = applyMount(s.yaw - yaw0, s.pitch - pitch0);
-    const hv = toUnit(adj.yaw, dist);
-    const vv = toUnit(adj.pitch, dist);
+    const hv = dist * Math.tan(degToRad(adj.yaw)) * 1000; // mm
+    const vv = dist * Math.tan(degToRad(adj.pitch)) * 1000;
     let px = cx + hv * scale;
     let py = cy - vv * scale;
     const dx = px - cx, dy = py - cy;
@@ -390,8 +393,8 @@ function draw() {
   // Green live aim circle (only while session running + sensors)
   if (sessionActive && liveSensors) {
     const adj = applyMount(liveYaw, livePitch);
-    const hv = toUnit(adj.yaw, dist);
-    const vv = toUnit(adj.pitch, dist);
+    const hv = dist * Math.tan(degToRad(adj.yaw)) * 1000;
+    const vv = dist * Math.tan(degToRad(adj.pitch)) * 1000;
     let px = cx + hv * scale;
     let py = cy - vv * scale;
     const dx = px - cx, dy = py - cy;
@@ -1009,6 +1012,8 @@ document.getElementById('defUnit').onchange = e => { unit = e.target.value; unit
 document.getElementById('rawLog').onchange = saveSettings;
 
 distanceEl.oninput = update;
+document.getElementById('plotOverride').oninput = update;
+document.getElementById('trackSize').oninput = () => { update(); saveSettings(); };
 
 loadSettings();
 update();
