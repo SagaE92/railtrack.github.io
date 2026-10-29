@@ -116,9 +116,7 @@
     <label>Profile <select id="profile"><option value="long-range">Long-range rifle</option><option value="pistol">Pistol (experimental)</option></select></label>
     <label>Mount <select id="mount"><option value="top">Top rail</option><option value="under">Under rail</option></select></label>
     <label><input type="checkbox" id="demo" checked> Demo mode</label>
-    <div id="demoControls" style="margin:8px 0;">
-      <button id="gen">Generate shot</button>
-    </div>
+    <div id="demoControls" style="margin:8px 0; display:none;"></div>
     <label>Shots shown <select id="nShots"><option>3</option><option>5</option><option selected>10</option><option>20</option></select></label>
     <label>Cant tolerance (°) <input type="number" id="cantTol" value="0.5" min="0.1" step="0.1" style="width:60px;"></label>
     <label>Default unit <select id="defUnit"><option value="moa">MOA</option><option value="mil">mil</option><option value="mm">mm</option></select></label>
@@ -165,7 +163,6 @@ const readoutSubEl = document.getElementById('readoutSub');
 const cantEl = document.getElementById('cant');
 const canvas = document.getElementById('target');
 const ctx = canvas.getContext('2d');
-const genBtn = document.getElementById('gen');
 const genShootBtn = document.getElementById('genShoot');
 const zeroBtn = document.getElementById('zero');
 const undoBtn = document.getElementById('undo');
@@ -203,6 +200,8 @@ let retryTimer = null;
 let liveSensors = false;
 let liveYaw = 0;
 let livePitch = 0;
+let orientZeroGamma = null;
+let orientZeroBeta = null;
 let orientationListener = null;
 
 function saveSettings() {
@@ -558,16 +557,24 @@ function renderSessions() {
 
 function startLiveSensors() {
   if (liveSensors) return;
+  orientZeroGamma = null;
+  orientZeroBeta = null;
   const start = () => {
     liveSensors = true;
     orientationListener = (e) => {
-      // Phone held upright in hand (screen facing shooter, top of phone forward/up).
-      // gamma: left/right tilt. Invert so left tilt = left on plot.
-      // beta: ~90 when upright. Relative pitch from upright.
+      // Phone upright in hand. Use relative orientation from session start to avoid wrap jumps.
       const gamma = e.gamma || 0;
       const beta = e.beta || 90;
-      liveYaw = -gamma * 0.08;          // inverted left-right
-      livePitch = (beta - 90) * 0.08;   // relative to upright
+      if (orientZeroGamma === null) {
+        orientZeroGamma = gamma;
+        orientZeroBeta = beta;
+      }
+      // Normalize gamma difference to -180..180 to avoid jumps
+      let dGamma = gamma - orientZeroGamma;
+      while (dGamma > 180) dGamma -= 360;
+      while (dGamma < -180) dGamma += 360;
+      liveYaw = -dGamma * 0.12;                 // inverted left-right, relative
+      livePitch = (beta - orientZeroBeta) * 0.12; // relative to upright at start
       if (sessionActive) draw();
     };
     window.addEventListener('deviceorientation', orientationListener);
@@ -788,7 +795,6 @@ function addDemoShot() {
   update();
 }
 
-genBtn.onclick = addDemoShot;
 genShootBtn.onclick = addDemoShot;
 
 async function tryReconnect() {
