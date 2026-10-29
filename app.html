@@ -18,10 +18,10 @@
   .panel { background:#000; border:1px solid #2a261c; border-radius:16px; padding:16px; margin-bottom:12px; }
   label { display:block; margin:8px 0 4px; font-size:0.85rem; color:#b8b4a8; }
   input[type=number], select, input[type=text] { background:#1a1a1a; color:#f3f1ea; border:1px solid #3a3428; border-radius:4px; padding:6px 10px; font-family:inherit; width:100px; }
-  button { background:#1a1a1a; color:#f5c518; border:1px solid #3a3428; border-radius:4px; padding:10px 16px; font-family:inherit; cursor:pointer; margin:4px; min-height:44px; }
+  button { background:#1a1a1a; color:#f5c518; border:1px solid #3a3428; border-radius:4px; padding:8px 12px; font-family:inherit; cursor:pointer; margin:2px; min-height:44px; }
   button:hover { background:#2a261c; }
   button:disabled { opacity:0.5; cursor:not-allowed; }
-  .readout { font-size:32px; margin:8px 0 4px; line-height:1.1; }
+  .readout { font-size:28px; margin:6px 0 2px; line-height:1.1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .readout-sub { font-size:0.8rem; color:#b8b4a8; margin-bottom:8px; }
   .cant { font-size:0.9rem; margin:4px 0; }
   .cant.ok { color:#3d8f4a; }
@@ -732,6 +732,21 @@ startBtn.onclick = () => {
   endBtn.disabled = false;
   saveSessions();
   startLiveSensors();
+  // Auto-zero after ~2 s of holding still
+  setTimeout(() => {
+    if (sessionActive && liveSensors && orientZeroGamma !== null) {
+      yaw0 = liveYaw;
+      pitch0 = livePitch;
+      if (currentSessionId) {
+        const sess = sessions.find(s => s.id === currentSessionId);
+        if (sess) { sess.yaw0 = yaw0; sess.pitch0 = pitch0; }
+        saveSessions();
+      }
+      setBanner('Zero set (held still)', 'info');
+      setTimeout(() => { if (bannerEl.querySelector('.banner.info')?.textContent.includes('Zero set')) setBanner(''); }, 1500);
+      update();
+    }
+  }, 2200);
   update();
 };
 
