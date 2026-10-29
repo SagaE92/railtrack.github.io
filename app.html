@@ -597,14 +597,9 @@ function startLiveSensors() {
       while (dGamma > 180) dGamma -= 360;
       while (dGamma < -180) dGamma += 360;
       let dBeta = rawBeta - orientZeroBeta;
-      // deadzone ~1.5° so tiny noise doesn't move it
-      if (Math.abs(dGamma) < 1.5) dGamma = 0;
-      if (Math.abs(dBeta) < 1.5) dBeta = 0;
-      const targetYaw = -dGamma * 0.05;
-      const targetPitch = dBeta * 0.05;
-      // low-pass so it doesn't jump
-      liveYaw = liveYaw * 0.7 + targetYaw * 0.3;
-      livePitch = livePitch * 0.7 + targetPitch * 0.3;
+      // direct, no lag or deadzone
+      liveYaw = -dGamma * 0.08;
+      livePitch = dBeta * 0.08;
       if (sessionActive) draw();
     };
     window.addEventListener('deviceorientation', orientationListener);
