@@ -201,6 +201,10 @@ let bleDevice = null, bleServer = null, shotChar = null, cmdChar = null;
 let battery = null;
 let retryCount = 0;
 let retryTimer = null;
+let liveSensors = false;
+let liveYaw = 0;
+let livePitch = 0;
+let orientationListener = null;
 
 function saveSettings() {
   settings = {
@@ -317,19 +321,22 @@ function draw() {
   ctx.clearRect(0,0,w,h);
 
   const visible = shots.filter(s => !s.deleted).slice(-(+nShotsEl.value||10));
-  if (!visible.length) {
-    ctx.strokeStyle = '#333';
-    ctx.beginPath();
-    ctx.arc(cx, cy, maxR, 0, Math.PI*2);
-    ctx.stroke();
-    return;
-  }
 
-  const vals = visible.flatMap(s => {
-    const adj = applyMount(s.yaw - yaw0, s.pitch - pitch0);
-    return [Math.abs(toUnit(adj.yaw, dist)), Math.abs(toUnit(adj.pitch, dist))];
-  });
-  const maxVal = Math.max(0.5, ...vals) * 1.2;
+  // Always draw rings + crosshair
+  let maxVal = 1.0; // default scale when no shots
+  if (visible.length) {
+    const vals = visible.flatMap(s => {
+      const adj = applyMount(s.yaw - yaw0, s.pitch - pitch0);
+      return [Math.abs(toUnit(adj.yaw, dist)), Math.abs(toUnit(adj.pitch, dist))];
+    });
+    maxVal = Math.max(0.5, ...vals) * 1.2;
+  }
+  // include live aim in scale if session running
+  if (sessionActive && liveSensors && (Math.abs(liveYaw) > 0.01 || Math.abs(livePitch) > 0.01)) {
+    const lh = Math.abs(toUnit(liveYaw, dist));
+    const lv = Math.abs(toUnit(livePitch, dist));
+    maxVal = Math.max(maxVal, lh * 1.2, lv * 1.2, 0.5);
+  }
   const scale = maxR / maxVal;
 
   ctx.strokeStyle = '#333';
@@ -349,6 +356,9 @@ function draw() {
   ctx.moveTo(cx-maxR-10, cy); ctx.lineTo(cx+maxR+10, cy);
   ctx.moveTo(cx, cy-maxR-10); ctx.lineTo(cx, cy+maxR+10);
   ctx.stroke();
+
+  if (!visible.length && !(sessionActive && liveSensors)) return;
+
 
   visible.forEach((s, i) => {
     const adj = applyMount(s.yaw - yaw0, s.pitch - pitch0);
@@ -379,6 +389,31 @@ function draw() {
     }
   });
   ctx.globalAlpha = 1;
+
+  // Green live aim circle (only while session running + sensors)
+  if (sessionActive && liveSensors) {
+    const adj = applyMount(liveYaw, livePitch);
+    const hv = toUnit(adj.yaw, dist);
+    const vv = toUnit(adj.pitch, dist);
+    let px = cx + hv * scale;
+    let py = cy - vv * scale;
+    const dx = px - cx, dy = py - cy;
+    const d = Math.hypot(dx, dy);
+    if (d > maxR - 4) {
+      const f = (maxR - 4) / d;
+      px = cx + dx * f;
+      py = cy + dy * f;
+    }
+    ctx.strokeStyle = '#3d8f4a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(px, py, 10, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(61,143,74,0.25)';
+    ctx.beginPath();
+    ctx.arc(px, py, 10, 0, Math.PI*2);
+    ctx.fill();
+  }
 }
 
 function renderList() {
@@ -529,6 +564,39 @@ function renderSessions() {
   });
 }
 
+
+function startLiveSensors() {
+  if (liveSensors) return;
+  const start = () => {
+    liveSensors = true;
+    orientationListener = (e) => {
+      // simple relative: gamma = left/right, beta = front/back
+      liveYaw = (e.gamma || 0) * 0.05;   // scale to reasonable degrees
+      livePitch = (e.beta || 0) * 0.05;
+      if (sessionActive) draw();
+    };
+    window.addEventListener('deviceorientation', orientationListener);
+    setBanner('Phone sensors active for live aim', 'info');
+    setTimeout(() => { if (bannerEl.querySelector('.banner.info')?.textContent.includes('sensors')) setBanner(''); }, 2000);
+  };
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission().then(p => {
+      if (p === 'granted') start();
+      else setBanner('Sensor permission denied', 'amber');
+    }).catch(() => setBanner('Sensor permission failed', 'amber'));
+  } else {
+    start();
+  }
+}
+function stopLiveSensors() {
+  if (orientationListener) {
+    window.removeEventListener('deviceorientation', orientationListener);
+    orientationListener = null;
+  }
+  liveSensors = false;
+  liveYaw = 0;
+  livePitch = 0;
+}
 function updateStatus() {
   const bat = (typeof battery === 'number') ? ` · ${battery}%` : '';
   const conn = bleServer ? 'Connected' : 'Not connected';
@@ -652,6 +720,7 @@ startBtn.onclick = () => {
   startBtn.disabled = true;
   endBtn.disabled = false;
   saveSessions();
+  startLiveSensors();
   update();
 };
 
@@ -669,6 +738,7 @@ endBtn.onclick = () => {
   saveSessions();
   lastSessionId = currentSessionId;
   currentSessionId = null;
+  stopLiveSensors();
   update();
   renderSessions();
 };
@@ -702,8 +772,14 @@ undoBtn.onclick = () => {
 
 function addDemoShot() {
   if (!demoChk.checked) return;
-  const yaw = (Math.random() - 0.5) * 0.1;
-  const pitch = (Math.random() - 0.5) * 0.08;
+  let yaw, pitch;
+  if (liveSensors && sessionActive) {
+    yaw = liveYaw;
+    pitch = livePitch;
+  } else {
+    yaw = (Math.random() - 0.5) * 0.1;
+    pitch = (Math.random() - 0.5) * 0.08;
+  }
   const cant = (Math.random() - 0.5) * 0.6;
   const shot = { n: shots.length+1, t: Date.now(), yaw, pitch, cant, bat: battery || 85, flags: 2, deleted: false };
   if (sessionActive) {
