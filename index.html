@@ -50,8 +50,8 @@
 </head>
 <body>
 <div class="top">
-  <h2 style="margin:4px 0 8px;">RailTrack <span class="demo-badge" id="demoBadge">DEMO</span></h2>
-  <div class="status" id="status">Not connected · Demo mode</div>
+  <h2 style="margin:4px 0 8px;">RailTrack <span class="demo-badge" id="demoBadge" style="display:none;">DEMO</span></h2>
+  <div class="status" id="status">Not connected</div>
 </div>
 <div id="banner"></div>
 
@@ -240,7 +240,7 @@ function saveSettings() {
 function loadSettings() {
   if (settings.profile) profileEl.value = settings.profile;
   if (settings.mount) mountEl.value = settings.mount;
-  if (settings.demo !== undefined) demoChk.checked = settings.demo;
+  if (settings.demo === true) demoChk.checked = true; else demoChk.checked = false;
   if (settings.nShots) nShotsEl.value = settings.nShots;
   if (settings.cantTol) cantTolEl.value = settings.cantTol;
   if (settings.trackSize) document.getElementById('trackSize').value = settings.trackSize;
