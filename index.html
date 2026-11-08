@@ -209,6 +209,7 @@ let liveYaw = 0;
 let livePitch = 0;
 let bleYaw0 = 0;
 let blePitch0 = 0;
+let aimTrail = [];
 let yawBuf = [];
 let pitchBuf = [];
 let orientZeroGamma = null;
@@ -399,7 +400,7 @@ function draw() {
   });
   ctx.globalAlpha = 1;
 
-  // Green live aim circle (only while session running + sensors)
+  // Green live aim + fading trail (~1500 ms, short visual length)
   if (sessionActive && liveSensors) {
     const adj = applyMount(liveYaw, livePitch);
     const hv = dist * Math.tan(degToRad(adj.yaw)) * 1000;
@@ -413,6 +414,33 @@ function draw() {
       px = cx + dx * f;
       py = cy + dy * f;
     }
+
+    const now = Date.now();
+    aimTrail.push({ x: px, y: py, t: now });
+    aimTrail = aimTrail.filter(p => now - p.t < 1500);
+    // keep trail visually short (~2 cm on a phone ≈ 40 px)
+    if (aimTrail.length > 2) {
+      let len = 0;
+      for (let i = aimTrail.length - 1; i > 0; i--) {
+        len += Math.hypot(aimTrail[i].x - aimTrail[i-1].x, aimTrail[i].y - aimTrail[i-1].y);
+        if (len > 40) { aimTrail = aimTrail.slice(i); break; }
+      }
+    }
+
+    if (aimTrail.length > 1) {
+      for (let i = 1; i < aimTrail.length; i++) {
+        const age = (now - aimTrail[i].t) / 1500;
+        ctx.globalAlpha = Math.max(0, 1 - age) * 0.7;
+        ctx.strokeStyle = '#3d8f4a';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(aimTrail[i-1].x, aimTrail[i-1].y);
+        ctx.lineTo(aimTrail[i].x, aimTrail[i].y);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+
     ctx.strokeStyle = '#3d8f4a';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -797,6 +825,7 @@ zeroBtn.onclick = async () => {
   livePitch = 0;
   yawBuf = [];
   pitchBuf = [];
+  aimTrail = [];
   yaw0 = 0;
   pitch0 = 0;
   if (currentSessionId) {
@@ -927,7 +956,7 @@ window.handlePacket = function(dv) {
         const y = parseFloat(parts[0]);
         const p = parseFloat(parts[1]);
         if (!isNaN(y) && !isNaN(p)) {
-          liveYaw = y - bleYaw0;
+          liveYaw = -(y - bleYaw0);
           livePitch = p - blePitch0;
           liveSensors = true;
           if (sessionActive) draw();
