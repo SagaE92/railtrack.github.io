@@ -207,6 +207,8 @@ let retryTimer = null;
 let liveSensors = false;
 let liveYaw = 0;
 let livePitch = 0;
+let bleYaw0 = 0;
+let blePitch0 = 0;
 let yawBuf = [];
 let pitchBuf = [];
 let orientZeroGamma = null;
@@ -788,11 +790,9 @@ endBtn.onclick = () => {
 };
 
 zeroBtn.onclick = async () => {
-  // Request sticky zero: average next samples so it stays centred
-  zeroPending = true;
-  zeroSumG = 0;
-  zeroSumB = 0;
-  zeroCount = 0;
+  // Capture current BLE orientation as the new centre
+  bleYaw0 = liveYaw + bleYaw0;
+  blePitch0 = livePitch + blePitch0;
   liveYaw = 0;
   livePitch = 0;
   yawBuf = [];
@@ -927,8 +927,8 @@ window.handlePacket = function(dv) {
         const y = parseFloat(parts[0]);
         const p = parseFloat(parts[1]);
         if (!isNaN(y) && !isNaN(p)) {
-          liveYaw = y;
-          livePitch = p;
+          liveYaw = y - bleYaw0;
+          livePitch = p - blePitch0;
           liveSensors = true;
           if (sessionActive) draw();
           return;
