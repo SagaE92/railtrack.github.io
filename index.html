@@ -126,6 +126,8 @@
     <label>Cant tolerance (°) <input type="number" id="cantTol" value="0.5" min="0.1" step="0.1" style="width:60px;"></label>
     <label>Track size (mm / 100 m) <input type="number" id="trackSize" value="200" min="50" step="50" style="width:70px;"></label>
     <label>Smooth samples (live aim) <input type="number" id="smoothN" value="4" min="1" max="12" step="1" style="width:60px;"></label>
+    <label><input type="checkbox" id="autoShot" checked> Auto shot from recoil</label>
+    <label>Shot sensitivity <select id="shotSens"><option value="low">Low</option><option value="med" selected>Medium</option><option value="high">High</option></select></label>
     <label>Default unit <select id="defUnit"><option value="moa">MOA</option><option value="mil">mil</option><option value="mm">mm</option></select></label>
     <button id="clear">Clear all data</button>
     <p class="note" style="margin-top:12px;">About — RailTrack v0.3 · Use Chrome or Edge for Bluetooth</p>
@@ -235,6 +237,8 @@ function saveSettings() {
     defUnit: document.getElementById('defUnit').value,
     trackSize: document.getElementById('trackSize').value,
     smoothN: document.getElementById('smoothN').value,
+    autoShot: document.getElementById('autoShot').checked,
+    shotSens: document.getElementById('shotSens').value,
     rawLog: document.getElementById('rawLog').checked
   };
   localStorage.setItem('railtrack.settings.v1', JSON.stringify(settings));
@@ -248,6 +252,8 @@ function loadSettings() {
   if (settings.cantTol) cantTolEl.value = settings.cantTol;
   if (settings.trackSize) document.getElementById('trackSize').value = settings.trackSize;
   if (settings.smoothN) document.getElementById('smoothN').value = settings.smoothN;
+  if (settings.autoShot !== undefined) document.getElementById('autoShot').checked = settings.autoShot;
+  if (settings.shotSens) document.getElementById('shotSens').value = settings.shotSens;
   if (settings.defUnit) {
     unit = settings.defUnit;
     unitBtns.forEach(b => b.classList.toggle('active', b.dataset.unit === unit));
@@ -818,7 +824,7 @@ endBtn.onclick = () => {
 };
 
 zeroBtn.onclick = async () => {
-  // Capture current BLE orientation as the new centre
+  // Capture current (already swapped) orientation as centre
   bleYaw0 = liveYaw + bleYaw0;
   blePitch0 = livePitch + blePitch0;
   liveYaw = 0;
@@ -956,10 +962,24 @@ window.handlePacket = function(dv) {
         const y = parseFloat(parts[0]);
         const p = parseFloat(parts[1]);
         if (!isNaN(y) && !isNaN(p)) {
-          liveYaw = -(y - bleYaw0);
-          livePitch = p - blePitch0;
+          const isShot = parts[0] === 'SHOT' || text.startsWith('SHOT');
+          const yy = isShot ? parseFloat(parts[1]) : y;
+          const pp = isShot ? parseFloat(parts[2]) : p;
+          if (isNaN(yy) || isNaN(pp)) return;
+          liveYaw = -yy - bleYaw0;
+          livePitch = pp - blePitch0;
           liveSensors = true;
+          if (isShot && document.getElementById('autoShot')?.checked && sessionActive) {
+            const shot = { n: shots.length+1, t: Date.now(), yaw: liveYaw, pitch: livePitch, cant: 0, bat: battery, flags: 1, deleted: false };
+            shots.push(shot);
+            const sess = sessions.find(s => s.id === currentSessionId);
+            if (sess) sess.shots = shots.slice();
+            saveSessions();
+            setBanner('Shot', 'info');
+            setTimeout(() => { if (bannerEl.querySelector('.banner.info')?.textContent === 'Shot') setBanner(''); }, 800);
+          }
           if (sessionActive) draw();
+          update();
           return;
         }
       }
@@ -1088,6 +1108,8 @@ distanceEl.oninput = () => {
 document.getElementById('plotOverride').oninput = update;
 document.getElementById('trackSize').oninput = () => { update(); saveSettings(); };
 document.getElementById('smoothN').oninput = () => { yawBuf = []; pitchBuf = []; saveSettings(); };
+document.getElementById('autoShot').onchange = saveSettings;
+document.getElementById('shotSens').onchange = saveSettings;
 
 loadSettings();
 update();
