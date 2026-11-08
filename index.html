@@ -133,7 +133,7 @@
 
     <h4 style="margin:16px 0 6px; color:#f5c518;">Shot</h4>
     <label><input type="checkbox" id="autoShot" checked> Auto shot from recoil</label>
-    <label>Threshold (g) <input type="number" id="shotG" value="4" min="0.5" max="20" step="0.5" style="width:60px;"></label>
+    <label>Threshold (g) <input type="number" id="shotG" value="1.5" min="0.5" max="20" step="0.5" style="width:60px;"></label>
     <label>Refractory (ms) <input type="number" id="shotRefract" value="400" min="100" max="2000" step="50" style="width:70px;"></label>
     <label>Min spike (ms) <input type="number" id="shotMinMs" value="10" min="0" max="100" step="5" style="width:60px;"></label>
     <label>Pre-shot still (ms) <input type="number" id="shotStill" value="200" min="0" max="1000" step="50" style="width:70px;"></label>
@@ -436,7 +436,7 @@ function draw() {
   // Cant marker on the ring (live roll)
   if (sessionActive && liveSensors && typeof liveRoll === 'number') {
     const ang = degToRad(liveRoll);
-    const mx = cx + Math.sin(ang) * (maxR - 6);
+    const mx = cx - Math.sin(ang) * (maxR - 6);
     const my = cy - Math.cos(ang) * (maxR - 6);
     ctx.fillStyle = Math.abs(liveRoll) > (+document.getElementById('cantTol')?.value || 0.5) ? '#c45c26' : '#5ec8e6';
     ctx.beginPath();
