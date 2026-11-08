@@ -151,9 +151,9 @@
 </div>
 
 <script>
-const SERVICE_UUID = 'TBD-RAILTRACK-SERVICE-UUID';
-const SHOT_CHAR = 'TBD-SHOT-CHAR-UUID';
-const CMD_CHAR = 'TBD-CMD-CHAR-UUID';
+const SERVICE_UUID = '0000fff0-0000-1000-8000-00805f9b34fb';
+const SHOT_CHAR = '0000fff1-0000-1000-8000-00805f9b34fb';
+const CMD_CHAR = '0000fff1-0000-1000-8000-00805f9b34fb';
 
 const tabs = document.querySelectorAll('.tab');
 const views = document.querySelectorAll('.view');
@@ -904,7 +904,10 @@ connectBtn.onclick = async () => {
       const batChar = await batSvc.getCharacteristic('battery_level');
       battery = (await batChar.readValue()).getUint8(0);
     } catch(e) {}
-    setBanner('');
+    setBanner('Connected to RailTrack', 'info');
+    setTimeout(() => { if (bannerEl.querySelector('.banner.info')?.textContent.includes('Connected')) setBanner(''); }, 1500);
+    liveSensors = true;
+    stopLiveSensors();
     bleDevice.addEventListener('gattserverdisconnected', onDisconnect);
     updateStatus();
   } catch (e) {
@@ -915,6 +918,22 @@ connectBtn.onclick = async () => {
 
 window.handlePacket = function(dv) {
   try {
+    // Live CSV from ESP: "yaw,pitch,roll"
+    const text = new TextDecoder().decode(dv).trim();
+    if (text.includes(',') && !text.startsWith('{')) {
+      const parts = text.split(',');
+      if (parts.length >= 2) {
+        const y = parseFloat(parts[0]);
+        const p = parseFloat(parts[1]);
+        if (!isNaN(y) && !isNaN(p)) {
+          liveYaw = y;
+          livePitch = p;
+          liveSensors = true;
+          if (sessionActive) draw();
+          return;
+        }
+      }
+    }
     if (dv.byteLength === 14) {
       const n = dv.getUint16(0, true);
       const t = dv.getUint32(2, true);
