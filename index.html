@@ -120,7 +120,7 @@
     <h3 style="margin:0 0 8px;">Settings</h3>
     <label>Profile <select id="profile"><option value="long-range">Long-range rifle</option><option value="pistol">Pistol (experimental)</option></select></label>
     <label>Mount <select id="mount"><option value="top">Top rail</option><option value="under">Under rail</option></select></label>
-    <label><input type="checkbox" id="demo" checked> Demo mode</label>
+    <label><input type="checkbox" id="demo"> Demo mode</label>
     <div id="demoControls" style="margin:8px 0; display:none;"></div>
     <label>Shots shown <select id="nShots"><option>3</option><option>5</option><option selected>10</option><option>20</option></select></label>
     <label>Cant tolerance (°) <input type="number" id="cantTol" value="0.5" min="0.1" step="0.1" style="width:60px;"></label>
@@ -156,13 +156,13 @@ const CMD_CHAR = '0000fff1-0000-1000-8000-00805f9b34fb';
 
 const tabs = document.querySelectorAll('.tab');
 const views = document.querySelectorAll('.view');
-tabs.forEach(t => t.onclick = () => {
+tabs.forEach(t => t.addEventListener('click', () => {
   tabs.forEach(x => x.classList.remove('active'));
   views.forEach(x => x.classList.remove('active'));
   t.classList.add('active');
   document.getElementById('view-' + t.dataset.tab).classList.add('active');
   if (t.dataset.tab === 'sessions') renderSessions();
-});
+}));
 
 const distanceEl = document.getElementById('distance');
 const readoutEl = document.getElementById('readout');
@@ -889,8 +889,11 @@ connectBtn.onclick = async () => {
   try {
     setBanner('Scanning…', 'info');
     bleDevice = await navigator.bluetooth.requestDevice({
-      filters: [{ services: [SERVICE_UUID] }],
-      optionalServices: ['battery_service']
+      filters: [
+        { services: [SERVICE_UUID] },
+        { name: 'RailTrack' }
+      ],
+      optionalServices: [SERVICE_UUID, 'battery_service']
     });
     bleServer = await bleDevice.gatt.connect();
     const svc = await bleServer.getPrimaryService(SERVICE_UUID);
