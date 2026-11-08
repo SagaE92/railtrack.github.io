@@ -957,8 +957,8 @@ window.handlePacket = function(dv) {
       update();
       return;
     }
-    const text = new TextDecoder().decode(dv);
-    const pkt = JSON.parse(text);
+    const jsonText = new TextDecoder().decode(dv);
+    const pkt = JSON.parse(jsonText);
     if (typeof pkt.yaw === 'number') {
       if (typeof pkt.bat === 'number') battery = pkt.bat;
       const shot = { n: pkt.n||shots.length+1, t: pkt.t||Date.now(), yaw: pkt.yaw, pitch: pkt.pitch, cant: pkt.cant||0, bat: pkt.bat, flags: pkt.flags||0, deleted: false };
