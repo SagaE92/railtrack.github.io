@@ -123,12 +123,25 @@
     <label><input type="checkbox" id="demo"> Demo mode</label>
     <div id="demoControls" style="margin:8px 0; display:none;"></div>
     <label>Shots shown <select id="nShots"><option>3</option><option>5</option><option selected>10</option><option>20</option></select></label>
-    <label>Cant tolerance (°) <input type="number" id="cantTol" value="0.5" min="0.1" step="0.1" style="width:60px;"></label>
-    <label>Track size (mm / 100 m) <input type="number" id="trackSize" value="200" min="50" step="50" style="width:70px;"></label>
-    <label>Smooth samples (live aim) <input type="number" id="smoothN" value="4" min="1" max="12" step="1" style="width:60px;"></label>
-    <label><input type="checkbox" id="autoShot" checked> Auto shot from recoil</label>
-    <label>Shot sensitivity <select id="shotSens"><option value="low">Low</option><option value="med" selected>Medium</option><option value="high">High</option></select></label>
     <label>Default unit <select id="defUnit"><option value="moa">MOA</option><option value="mil">mil</option><option value="mm">mm</option></select></label>
+
+    <h4 style="margin:16px 0 6px; color:#f5c518;">Cursor</h4>
+    <label>Track size (mm / 100 m) <input type="number" id="trackSize" value="200" min="50" step="50" style="width:70px;"></label>
+    <label>Smooth samples <input type="number" id="smoothN" value="4" min="1" max="12" step="1" style="width:60px;"></label>
+    <label>Fade length (px) <input type="number" id="fadeLen" value="80" min="10" max="200" step="10" style="width:60px;"></label>
+    <label>Fade time (ms) <input type="number" id="fadeTime" value="1500" min="200" max="4000" step="100" style="width:70px;"></label>
+
+    <h4 style="margin:16px 0 6px; color:#f5c518;">Shot</h4>
+    <label><input type="checkbox" id="autoShot" checked> Auto shot from recoil</label>
+    <label>Threshold (g) <input type="number" id="shotG" value="4" min="0.5" max="20" step="0.5" style="width:60px;"></label>
+    <label>Refractory (ms) <input type="number" id="shotRefract" value="400" min="100" max="2000" step="50" style="width:70px;"></label>
+    <label>Min spike (ms) <input type="number" id="shotMinMs" value="10" min="0" max="100" step="5" style="width:60px;"></label>
+    <label>Pre-shot still (ms) <input type="number" id="shotStill" value="200" min="0" max="1000" step="50" style="width:70px;"></label>
+    <label>Axis X weight <input type="number" id="axX" value="1" min="0" max="3" step="0.1" style="width:60px;"></label>
+    <label>Axis Y weight <input type="number" id="axY" value="1" min="0" max="3" step="0.1" style="width:60px;"></label>
+    <label>Axis Z weight <input type="number" id="axZ" value="1.5" min="0" max="3" step="0.1" style="width:60px;"></label>
+    <label>Cant tolerance (°) <input type="number" id="cantTol" value="0.5" min="0.1" step="0.1" style="width:60px;"></label>
+    <p class="note">Axis weights bias which direction counts as recoil. Cant marker shows on the ring.</p>
     <button id="clear">Clear all data</button>
     <p class="note" style="margin-top:12px;">About — RailTrack v0.3 · Use Chrome or Edge for Bluetooth</p>
     <hr style="border-color:#2a261c; margin:16px 0;">
@@ -209,6 +222,7 @@ let retryTimer = null;
 let liveSensors = false;
 let liveYaw = 0;
 let livePitch = 0;
+let liveRoll = 0;
 let bleYaw0 = 0;
 let blePitch0 = 0;
 let aimTrail = [];
@@ -237,6 +251,15 @@ function saveSettings() {
     defUnit: document.getElementById('defUnit').value,
     trackSize: document.getElementById('trackSize').value,
     smoothN: document.getElementById('smoothN').value,
+    fadeLen: document.getElementById('fadeLen').value,
+    fadeTime: document.getElementById('fadeTime').value,
+    shotG: document.getElementById('shotG').value,
+    shotRefract: document.getElementById('shotRefract').value,
+    shotMinMs: document.getElementById('shotMinMs').value,
+    shotStill: document.getElementById('shotStill').value,
+    axX: document.getElementById('axX').value,
+    axY: document.getElementById('axY').value,
+    axZ: document.getElementById('axZ').value,
     autoShot: document.getElementById('autoShot').checked,
     shotSens: document.getElementById('shotSens').value,
     rawLog: document.getElementById('rawLog').checked
@@ -252,6 +275,9 @@ function loadSettings() {
   if (settings.cantTol) cantTolEl.value = settings.cantTol;
   if (settings.trackSize) document.getElementById('trackSize').value = settings.trackSize;
   if (settings.smoothN) document.getElementById('smoothN').value = settings.smoothN;
+  ['fadeLen','fadeTime','shotG','shotRefract','shotMinMs','shotStill','axX','axY','axZ'].forEach(id => {
+    if (settings[id] !== undefined) document.getElementById(id).value = settings[id];
+  });
   if (settings.autoShot !== undefined) document.getElementById('autoShot').checked = settings.autoShot;
   if (settings.shotSens) document.getElementById('shotSens').value = settings.shotSens;
   if (settings.defUnit) {
@@ -406,6 +432,18 @@ function draw() {
   });
   ctx.globalAlpha = 1;
 
+
+  // Cant marker on the ring (live roll)
+  if (sessionActive && liveSensors && typeof liveRoll === 'number') {
+    const ang = degToRad(liveRoll);
+    const mx = cx + Math.sin(ang) * (maxR - 6);
+    const my = cy - Math.cos(ang) * (maxR - 6);
+    ctx.fillStyle = Math.abs(liveRoll) > (+document.getElementById('cantTol')?.value || 0.5) ? '#c45c26' : '#5ec8e6';
+    ctx.beginPath();
+    ctx.arc(mx, my, 5, 0, Math.PI*2);
+    ctx.fill();
+  }
+
   // Green live aim + fading trail (~1500 ms, short visual length)
   if (sessionActive && liveSensors) {
     const adj = applyMount(liveYaw, livePitch);
@@ -423,19 +461,21 @@ function draw() {
 
     const now = Date.now();
     aimTrail.push({ x: px, y: py, t: now });
-    aimTrail = aimTrail.filter(p => now - p.t < 1500);
+    const fadeMs = +(document.getElementById('fadeTime')?.value) || 1500;
+    const fadePx = +(document.getElementById('fadeLen')?.value) || 80;
+    aimTrail = aimTrail.filter(p => now - p.t < fadeMs);
     // keep trail visually short (~2 cm on a phone ≈ 40 px)
     if (aimTrail.length > 2) {
       let len = 0;
       for (let i = aimTrail.length - 1; i > 0; i--) {
         len += Math.hypot(aimTrail[i].x - aimTrail[i-1].x, aimTrail[i].y - aimTrail[i-1].y);
-        if (len > 40) { aimTrail = aimTrail.slice(i); break; }
+        if (len > fadePx) { aimTrail = aimTrail.slice(i); break; }
       }
     }
 
     if (aimTrail.length > 1) {
       for (let i = 1; i < aimTrail.length; i++) {
-        const age = (now - aimTrail[i].t) / 1500;
+        const age = (now - aimTrail[i].t) / fadeMs;
         ctx.globalAlpha = Math.max(0, 1 - age) * 0.7;
         ctx.strokeStyle = '#3d8f4a';
         ctx.lineWidth = 3;
@@ -883,7 +923,15 @@ function addDemoShot() {
   update();
 }
 
-genShootBtn.onclick = addDemoShot;
+genShootBtn.onclick = () => {
+  if (!sessionActive) return;
+  const shot = { n: shots.length+1, t: Date.now(), yaw: liveYaw, pitch: livePitch, cant: liveRoll, bat: battery||87, flags: 0, deleted: false };
+  shots.push(shot);
+  const sess = sessions.find(s => s.id === currentSessionId);
+  if (sess) sess.shots = shots.slice();
+  saveSessions();
+  update();
+};
 
 async function tryReconnect() {
   if (!bleDevice || retryCount >= 10) {
@@ -968,6 +1016,9 @@ window.handlePacket = function(dv) {
           if (isNaN(yy) || isNaN(pp)) return;
           liveYaw = -yy - bleYaw0;
           livePitch = pp - blePitch0;
+          if (parts.length >= 4) liveRoll = parseFloat(parts[3]) || 0;
+          if (parts.length >= 5) battery = parseFloat(parts[4]) || 87;
+          else battery = 87;
           liveSensors = true;
           if (isShot && document.getElementById('autoShot')?.checked && sessionActive) {
             const shot = { n: shots.length+1, t: Date.now(), yaw: liveYaw, pitch: livePitch, cant: 0, bat: battery, flags: 1, deleted: false };
@@ -1107,7 +1158,10 @@ distanceEl.oninput = () => {
 };
 document.getElementById('plotOverride').oninput = update;
 document.getElementById('trackSize').oninput = () => { update(); saveSettings(); };
-document.getElementById('smoothN').oninput = () => { yawBuf = []; pitchBuf = []; saveSettings(); };
+['smoothN','fadeLen','fadeTime','shotG','shotRefract','shotMinMs','shotStill','axX','axY','axZ'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.oninput = () => { if (id==='smoothN') { yawBuf=[]; pitchBuf=[]; } saveSettings(); };
+});
 document.getElementById('autoShot').onchange = saveSettings;
 document.getElementById('shotSens').onchange = saveSettings;
 
