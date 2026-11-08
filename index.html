@@ -71,7 +71,7 @@
       <div style="display:flex; flex-direction:column;">
         <label>Plot size (mm)</label>
         <div style="display:flex; gap:6px; align-items:center;">
-          <input type="number" id="plotOverride" placeholder="auto" min="10" step="10" style="width:90px; height:44px; box-sizing:border-box; padding:0 8px;">
+          <input type="number" id="plotOverride" placeholder="auto / 2000" min="10" step="10" style="width:90px; height:44px; box-sizing:border-box; padding:0 8px;">
           <button id="connect" style="height:44px; padding:0 12px;">Connect</button>
         </div>
       </div>
@@ -761,8 +761,7 @@ startBtn.onclick = () => {
       notes: document.getElementById('metaNotes').value
     }
   });
-  distanceEl.disabled = true;
-  startBtn.disabled = true;
+    startBtn.disabled = true;
   endBtn.disabled = false;
   saveSessions();
   startLiveSensors();
@@ -1050,7 +1049,13 @@ nShotsEl.onchange = cantTolEl.oninput = () => { update(); saveSettings(); };
 document.getElementById('defUnit').onchange = e => { unit = e.target.value; unitBtns.forEach(b => b.classList.toggle('active', b.dataset.unit === unit)); update(); saveSettings(); };
 document.getElementById('rawLog').onchange = saveSettings;
 
-distanceEl.oninput = update;
+distanceEl.oninput = () => {
+  if (sessionActive && currentSessionId) {
+    const sess = sessions.find(s => s.id === currentSessionId);
+    if (sess) { sess.distance_m = +distanceEl.value || 300; saveSessions(); }
+  }
+  update();
+};
 document.getElementById('plotOverride').oninput = update;
 document.getElementById('trackSize').oninput = () => { update(); saveSettings(); };
 document.getElementById('smoothN').oninput = () => { yawBuf = []; pitchBuf = []; saveSettings(); };
