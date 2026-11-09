@@ -985,8 +985,7 @@ async function tryReconnect() {
     shotChar = await svc.getCharacteristic(SHOT_CHAR);
     cmdChar = await svc.getCharacteristic(CMD_CHAR);
     await shotChar.startNotifications();
-    shotChar.removeEventListener('characteristicvaluechanged', handlePacket);
-    shotChar.addEventListener('characteristicvaluechanged', handlePacket);
+    shotChar.addEventListener('characteristicvaluechanged', e => handlePacket(e.target.value));
     setBanner('');
     retryCount = 0;
     updateStatus();
@@ -1022,8 +1021,7 @@ connectBtn.onclick = async () => {
     shotChar = await svc.getCharacteristic(SHOT_CHAR);
     cmdChar = await svc.getCharacteristic(CMD_CHAR);
     await shotChar.startNotifications();
-    shotChar.removeEventListener('characteristicvaluechanged', handlePacket);
-    shotChar.addEventListener('characteristicvaluechanged', handlePacket);
+    shotChar.addEventListener('characteristicvaluechanged', e => handlePacket(e.target.value));
     try {
       const batSvc = await bleServer.getPrimaryService('battery_service');
       const batChar = await batSvc.getCharacteristic('battery_level');
