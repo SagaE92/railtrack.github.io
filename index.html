@@ -989,8 +989,8 @@ async function tryReconnect() {
     shotChar = await svc.getCharacteristic(SHOT_CHAR);
     cmdChar = await svc.getCharacteristic(CMD_CHAR);
     await shotChar.startNotifications();
-    shotChar.removeEventListener('characteristicvaluechanged', handlePacket);
-    shotChar.addEventListener('characteristicvaluechanged', handlePacket);
+    shotChar.removeEventListener('characteristicvaluechanged', window.handlePacket);
+    shotChar.addEventListener('characteristicvaluechanged', window.handlePacket);
     setBanner('');
     retryCount = 0;
     updateStatus();
@@ -1026,8 +1026,8 @@ connectBtn.onclick = async () => {
     shotChar = await svc.getCharacteristic(SHOT_CHAR);
     cmdChar = await svc.getCharacteristic(CMD_CHAR);
     await shotChar.startNotifications();
-    shotChar.removeEventListener('characteristicvaluechanged', handlePacket);
-    shotChar.addEventListener('characteristicvaluechanged', handlePacket);
+    shotChar.removeEventListener('characteristicvaluechanged', window.handlePacket);
+    shotChar.addEventListener('characteristicvaluechanged', window.handlePacket);
     try {
       const batSvc = await bleServer.getPrimaryService('battery_service');
       const batChar = await batSvc.getCharacteristic('battery_level');
@@ -1042,6 +1042,10 @@ connectBtn.onclick = async () => {
     } catch (e) {}
     setTimeout(() => { if (bannerEl.querySelector('.banner.info')?.textContent.includes('Connected')) setBanner(''); }, 1500);
     stopLiveSensors();
+    bleYaw0 = 0;
+    blePitch0 = 0;
+    liveYaw = 0;
+    livePitch = 0;
     liveSensors = true;
     bleDevice.addEventListener('gattserverdisconnected', onDisconnect);
     updateStatus();
@@ -1069,6 +1073,16 @@ function finishCalIfDone() {
 window.handlePacket = function(dv) {
   try {
     const text = new TextDecoder().decode(dv).trim();
+    if (!text) return;
+    const bits = text.replace('SHOT,', '').split(',');
+    const ly = parseFloat(bits[0]);
+    const lp = parseFloat(bits[1]);
+    if (!isNaN(ly) && !isNaN(lp)) {
+      liveYaw = -ly - bleYaw0;
+      livePitch = lp - blePitch0;
+      liveSensors = true;
+      if (sessionActive) draw();
+    }
     // Calibration first — nothing else can swallow the shot
     if (calMode && text.startsWith('SHOT')) {
       if (calPeaks.length < 2) {
