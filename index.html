@@ -442,12 +442,24 @@ function draw() {
   ctx.globalAlpha = 1;
 
 
-  if (calMode) {
-    ctx.fillStyle = '#f5c518';
-    ctx.font = '14px Share Tech Mono';
+  if (calMode || (typeof calPeaks !== 'undefined' && calPeaks.length && !sessionActive)) {
+    ctx.save();
     ctx.textAlign = 'center';
-    ctx.fillText('Tap ' + (2 - calPeaks.length) + ' more', cx, cy);
-    ctx.textAlign = 'left';
+    ctx.fillStyle = '#f5c518';
+    ctx.font = 'bold 28px Share Tech Mono';
+    if (calMode) ctx.fillText(calPeaks.length + ' / 2', cx, cy - 10);
+    else ctx.fillText('DONE', cx, cy - 10);
+    ctx.font = '16px Share Tech Mono';
+    ctx.fillStyle = '#f7f4ea';
+    ctx.fillText(calMode ? 'Calibration shot' : 'Calibration finished', cx, cy + 22);
+    // large mark for each cal shot
+    for (let i = 0; i < Math.min(calPeaks.length, 2); i++) {
+      ctx.beginPath();
+      ctx.arc(cx + (i === 0 ? -28 : 28), cy + 55, 16, 0, Math.PI * 2);
+      ctx.fillStyle = '#f5c518';
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   // Cant marker on the ring (live roll)
@@ -975,7 +987,8 @@ async function tryReconnect() {
     shotChar = await svc.getCharacteristic(SHOT_CHAR);
     cmdChar = await svc.getCharacteristic(CMD_CHAR);
     await shotChar.startNotifications();
-    shotChar.addEventListener('characteristicvaluechanged', e => handlePacket(e.target.value));
+    shotChar.removeEventListener('characteristicvaluechanged', handlePacket);
+    shotChar.addEventListener('characteristicvaluechanged', handlePacket);
     setBanner('');
     retryCount = 0;
     updateStatus();
@@ -1011,7 +1024,8 @@ connectBtn.onclick = async () => {
     shotChar = await svc.getCharacteristic(SHOT_CHAR);
     cmdChar = await svc.getCharacteristic(CMD_CHAR);
     await shotChar.startNotifications();
-    shotChar.addEventListener('characteristicvaluechanged', e => handlePacket(e.target.value));
+    shotChar.removeEventListener('characteristicvaluechanged', handlePacket);
+    shotChar.addEventListener('characteristicvaluechanged', handlePacket);
     try {
       const batSvc = await bleServer.getPrimaryService('battery_service');
       const batChar = await batSvc.getCharacteristic('battery_level');
@@ -1058,21 +1072,22 @@ window.handlePacket = function(dv) {
           else battery = 87;
           liveSensors = true;
           if (isShot && calMode) {
+            if (calPeaks.length >= 2) { calMode = false; return; }
             const peak = parseFloat(parts[parts.length - 1]);
             calPeaks.push(isNaN(peak) ? 0 : peak);
-            setBanner('Cal ' + calPeaks.length + '/2', 'info');
+            if (calPeaks.length === 1) setBanner('Shot 1 of 2', 'info');
             if (calPeaks.length >= 2) {
               calMode = false;
               const usable = calPeaks.filter(p => p > 0);
               if (usable.length) {
                 const avg = usable.reduce((a,b)=>a+b,0) / usable.length;
                 const th = Math.max(0.5, +(avg * 0.7).toFixed(1));
-                document.getElementById('shotG').value = th;
+                const el = document.getElementById('shotG');
+                if (el) el.value = th;
                 saveSettings();
               }
-              calPeaks = [];
-              setBanner('Calibration done', 'info');
-              setTimeout(() => { if (bannerEl && bannerEl.textContent.includes('Calibration done')) setBanner(''); }, 5000);
+              setBanner('CALIBRATION FINISHED', 'info');
+              setTimeout(() => { if (bannerEl && bannerEl.textContent.includes('FINISHED')) setBanner(''); }, 5000);
             }
             draw();
             update();
