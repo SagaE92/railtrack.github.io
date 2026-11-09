@@ -91,10 +91,11 @@
 
     <canvas id="target" width="300" height="300"></canvas>
 
-    <div style="margin-top:8px;">
-      <button id="start">Start session</button>
-      <button id="end" disabled>End session</button>
-      <button id="zero">Zero</button>
+    <div style="margin-top:8px; display:flex; gap:4px; flex-wrap:nowrap;">
+      <button id="start" style="flex:1; padding:8px 6px; font-size:0.85rem;">Start</button>
+      <button id="end" disabled style="flex:1; padding:8px 6px; font-size:0.85rem;">End</button>
+      <button id="zero" style="flex:1; padding:8px 6px; font-size:0.85rem;">Zero</button>
+      <button id="calibrate" style="flex:1; padding:8px 6px; font-size:0.85rem;">Cal</button>
     </div>
     <div style="margin-top:4px;">
       <button id="genShoot" style="display:none;">Generate shot</button>
@@ -187,6 +188,7 @@ const canvas = document.getElementById('target');
 const ctx = canvas.getContext('2d');
 const genShootBtn = document.getElementById('genShoot');
 const zeroBtn = document.getElementById('zero');
+const calBtn = document.getElementById('calibrate');
 const undoBtn = document.getElementById('undo'); // removed from UI
 const startBtn = document.getElementById('start');
 const endBtn = document.getElementById('end');
@@ -863,6 +865,10 @@ endBtn.onclick = () => {
   renderSessions();
 };
 
+if (calBtn) calBtn.onclick = () => {
+  setBanner('Calibrate: tap 2–3 times, then we average (coming next)', 'info');
+  setTimeout(() => setBanner(''), 2000);
+};
 zeroBtn.onclick = async () => {
   // Capture current (already swapped) orientation as centre
   bleYaw0 = liveYaw + bleYaw0;
