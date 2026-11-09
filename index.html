@@ -446,8 +446,7 @@ function draw() {
     ctx.fillStyle = '#f5c518';
     ctx.font = '14px Share Tech Mono';
     ctx.textAlign = 'center';
-    ctx.fillText('Tap 2 times', cx, cy - 16);
-    ctx.fillText(calPeaks.length + '/2', cx, cy + 6);
+    ctx.fillText('Tap ' + (2 - calPeaks.length) + ' more', cx, cy);
     ctx.textAlign = 'left';
   }
 
@@ -833,6 +832,8 @@ document.getElementById('sheetDelete').onclick = () => {
 };
 
 startBtn.onclick = () => {
+  calMode = false;
+  calPeaks = [];
   if (sessionActive) return;
   shots = [];
   yaw0 = 0;
@@ -1057,18 +1058,24 @@ window.handlePacket = function(dv) {
           liveSensors = true;
           if (isShot && calMode) {
             const peak = parseFloat(parts[parts.length - 1]);
-            if (!isNaN(peak)) calPeaks.push(peak);
-            setBanner('Cal ' + calPeaks.length + '/2', 'info');
+            calPeaks.push(isNaN(peak) ? 0 : peak);
             if (calPeaks.length >= 2) {
-              const avg = calPeaks.reduce((a,b)=>a+b,0) / calPeaks.length;
-              const th = Math.max(0.5, +(avg * 0.7).toFixed(1));
-              document.getElementById('shotG').value = th;
-              saveSettings();
-              pushShotSettings();
               calMode = false;
-              setBanner('Threshold set to ' + th + ' g', 'info');
-              setTimeout(() => setBanner(''), 2000);
+              const usable = calPeaks.filter(p => p > 0);
+              if (usable.length) {
+                const avg = usable.reduce((a,b)=>a+b,0) / usable.length;
+                const th = Math.max(0.5, +(avg * 0.7).toFixed(1));
+                document.getElementById('shotG').value = th;
+                saveSettings();
+                if (typeof pushShotSettings === 'function') pushShotSettings();
+              }
+              calPeaks = [];
+              setBanner('Calibration done', 'info');
+              setTimeout(() => { if (bannerEl && bannerEl.textContent.includes('Calibration done')) setBanner(''); }, 5000);
             }
+            if (sessionActive) draw();
+            update();
+            return;
           }
           if (isShot && document.getElementById('autoShot')?.checked && sessionActive && !calMode) {
             const shot = { n: shots.length+1, t: Date.now(), yaw: liveYaw, pitch: livePitch, cant: 0, bat: battery, flags: 1, deleted: false };
