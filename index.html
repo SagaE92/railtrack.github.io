@@ -678,7 +678,7 @@ function renderSessions() {
 
 
 function startLiveSensors() {
-  if (liveSensors) return;
+  if (bleServer || liveSensors) return;
   orientZeroGamma = null;
   orientZeroBeta = null;
   orientSamples = 0;
@@ -875,7 +875,6 @@ startBtn.onclick = () => {
     startBtn.disabled = true;
   endBtn.disabled = false;
   saveSessions();
-  startLiveSensors();
   update();
 };
 
