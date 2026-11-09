@@ -189,6 +189,8 @@ const ctx = canvas.getContext('2d');
 const genShootBtn = document.getElementById('genShoot');
 const zeroBtn = document.getElementById('zero');
 const calBtn = document.getElementById('calibrate');
+let calMode = false;
+let calPeaks = [];
 const undoBtn = document.getElementById('undo'); // removed from UI
 const startBtn = document.getElementById('start');
 const endBtn = document.getElementById('end');
@@ -866,8 +868,9 @@ endBtn.onclick = () => {
 };
 
 if (calBtn) calBtn.onclick = () => {
-  setBanner('Calibrate: tap 2–3 times, then we average (coming next)', 'info');
-  setTimeout(() => setBanner(''), 2000);
+  calMode = true;
+  calPeaks = [];
+  setBanner('Calibrate: tap the sensor 3 times', 'info');
 };
 zeroBtn.onclick = async () => {
   // Capture current (already swapped) orientation as centre
@@ -1028,7 +1031,21 @@ window.handlePacket = function(dv) {
           if (parts.length > batIdx) battery = parseFloat(parts[batIdx]) || 87;
           else battery = 87;
           liveSensors = true;
-          if (isShot && document.getElementById('autoShot')?.checked && sessionActive) {
+          if (isShot && calMode) {
+            const peak = parseFloat(parts[parts.length - 1]);
+            if (!isNaN(peak)) calPeaks.push(peak);
+            setBanner('Cal ' + calPeaks.length + '/3', 'info');
+            if (calPeaks.length >= 3) {
+              const avg = calPeaks.reduce((a,b)=>a+b,0) / calPeaks.length;
+              const th = Math.max(0.5, +(avg * 0.7).toFixed(1));
+              document.getElementById('shotG').value = th;
+              saveSettings();
+              calMode = false;
+              setBanner('Threshold set to ' + th + ' g', 'info');
+              setTimeout(() => setBanner(''), 2000);
+            }
+          }
+          if (isShot && document.getElementById('autoShot')?.checked && sessionActive && !calMode) {
             const shot = { n: shots.length+1, t: Date.now(), yaw: liveYaw, pitch: livePitch, cant: 0, bat: battery, flags: 1, deleted: false };
             shots.push(shot);
             const sess = sessions.find(s => s.id === currentSessionId);
