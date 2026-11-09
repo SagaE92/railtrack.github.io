@@ -892,7 +892,10 @@ endBtn.onclick = () => {
   saveSessions();
   lastSessionId = currentSessionId;
   currentSessionId = null;
-  stopLiveSensors();
+  if (orientationListener) {
+    window.removeEventListener('deviceorientation', orientationListener);
+    orientationListener = null;
+  }
   update();
   renderSessions();
 };
@@ -1038,8 +1041,8 @@ connectBtn.onclick = async () => {
       await shotChar.writeValue(new TextEncoder().encode('R,' + r));
     } catch (e) {}
     setTimeout(() => { if (bannerEl.querySelector('.banner.info')?.textContent.includes('Connected')) setBanner(''); }, 1500);
-    liveSensors = true;
     stopLiveSensors();
+    liveSensors = true;
     bleDevice.addEventListener('gattserverdisconnected', onDisconnect);
     updateStatus();
   } catch (e) {
