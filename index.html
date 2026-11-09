@@ -408,7 +408,7 @@ function draw() {
   ctx.moveTo(cx, cy-maxR-10); ctx.lineTo(cx, cy+maxR+10);
   ctx.stroke();
 
-  if (!visible.length && !(sessionActive && liveSensors)) return;
+  if (!visible.length && !(sessionActive && liveSensors) && !calMode) return;
 
 
   visible.forEach((s, i) => {
@@ -889,7 +889,8 @@ endBtn.onclick = () => {
 if (calBtn) calBtn.onclick = () => {
   calMode = true;
   calPeaks = [];
-  setBanner('Calibrate: 2 taps', 'info');
+  setBanner('Calibrate: tap 2 times', 'info');
+  draw();
 };
 zeroBtn.onclick = async () => {
   // Capture current (already swapped) orientation as centre
@@ -1059,6 +1060,7 @@ window.handlePacket = function(dv) {
           if (isShot && calMode) {
             const peak = parseFloat(parts[parts.length - 1]);
             calPeaks.push(isNaN(peak) ? 0 : peak);
+            setBanner('Cal ' + calPeaks.length + '/2', 'info');
             if (calPeaks.length >= 2) {
               calMode = false;
               const usable = calPeaks.filter(p => p > 0);
@@ -1067,13 +1069,12 @@ window.handlePacket = function(dv) {
                 const th = Math.max(0.5, +(avg * 0.7).toFixed(1));
                 document.getElementById('shotG').value = th;
                 saveSettings();
-                if (typeof pushShotSettings === 'function') pushShotSettings();
               }
               calPeaks = [];
               setBanner('Calibration done', 'info');
               setTimeout(() => { if (bannerEl && bannerEl.textContent.includes('Calibration done')) setBanner(''); }, 5000);
             }
-            if (sessionActive) draw();
+            draw();
             update();
             return;
           }
