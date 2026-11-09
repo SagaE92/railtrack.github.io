@@ -901,7 +901,7 @@ endBtn.onclick = () => {
 if (calBtn) calBtn.onclick = () => {
   calMode = true;
   calPeaks = [];
-  setBanner('Calibrate: tap 2 times', 'info');
+  setBanner('Calibration: 0 / 2 — tap the sensor', 'info');
   draw();
 };
 zeroBtn.onclick = async () => {
@@ -1049,10 +1049,38 @@ connectBtn.onclick = async () => {
   }
 };
 
+function finishCalIfDone() {
+  if (calPeaks.length < 2) return;
+  calMode = false;
+  const usable = calPeaks.filter(p => p > 0);
+  if (usable.length) {
+    const avg = usable.reduce((a,b)=>a+b,0) / usable.length;
+    const th = Math.max(0.5, +(avg * 0.7).toFixed(1));
+    const el = document.getElementById('shotG');
+    if (el) el.value = th;
+    saveSettings();
+  }
+  setBanner('CALIBRATION FINISHED', 'info');
+  setTimeout(() => { if (bannerEl && bannerEl.textContent.includes('FINISHED')) setBanner(''); }, 5000);
+  draw();
+}
 window.handlePacket = function(dv) {
   try {
-    // Live CSV from ESP: "yaw,pitch,roll"
     const text = new TextDecoder().decode(dv).trim();
+    // Calibration first — nothing else can swallow the shot
+    if (calMode && text.startsWith('SHOT')) {
+      if (calPeaks.length < 2) {
+        const parts = text.split(',');
+        const peak = parseFloat(parts[parts.length - 1]);
+        calPeaks.push(isNaN(peak) ? 1 : peak);
+        setBanner('Shot ' + calPeaks.length + ' of 2', 'info');
+        finishCalIfDone();
+        draw();
+        update();
+      }
+      return;
+    }
+    // Live CSV from ESP: "yaw,pitch,roll"
     if (text.includes(',') && !text.startsWith('{')) {
       const parts = text.split(',');
       const isShot = parts[0] === 'SHOT' || text.startsWith('SHOT');
