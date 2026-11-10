@@ -442,26 +442,6 @@ function draw() {
   ctx.globalAlpha = 1;
 
 
-  if (calMode || (typeof calPeaks !== 'undefined' && calPeaks.length && !sessionActive)) {
-    ctx.save();
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#f5c518';
-    ctx.font = 'bold 28px Share Tech Mono';
-    if (calMode) ctx.fillText(calPeaks.length + ' / 2', cx, cy - 10);
-    else ctx.fillText('DONE', cx, cy - 10);
-    ctx.font = '16px Share Tech Mono';
-    ctx.fillStyle = '#f7f4ea';
-    ctx.fillText(calMode ? 'Calibration shot' : 'Calibration finished', cx, cy + 22);
-    // large mark for each cal shot
-    for (let i = 0; i < Math.min(calPeaks.length, 2); i++) {
-      ctx.beginPath();
-      ctx.arc(cx + (i === 0 ? -28 : 28), cy + 55, 16, 0, Math.PI * 2);
-      ctx.fillStyle = '#f5c518';
-      ctx.fill();
-    }
-    ctx.restore();
-  }
-
   // Cant marker on the ring (live roll)
   if (sessionActive && liveSensors && typeof liveRoll === 'number') {
     const ang = degToRad(liveRoll);
@@ -899,8 +879,7 @@ endBtn.onclick = () => {
 if (calBtn) calBtn.onclick = () => {
   calMode = true;
   calPeaks = [];
-  setBanner('Calibrate: tap 2 times', 'info');
-  draw();
+  setBanner('Calibrate: tap 2 times', 'amber');
 };
 zeroBtn.onclick = async () => {
   // Capture current (already swapped) orientation as centre
@@ -1068,15 +1047,19 @@ window.handlePacket = function(dv) {
           else battery = 87;
           liveSensors = true;
           if (isShot && calMode) {
-            calPeaks.push(1);
-            setBanner('Shot ' + calPeaks.length + ' of 2', 'info');
+            const peak = parseFloat(parts[parts.length - 1]);
+            calPeaks.push(isNaN(peak) ? 1.5 : peak);
+            setBanner('Tap ' + calPeaks.length + ' of 2', 'amber');
             if (calPeaks.length >= 2) {
+              const avg = calPeaks.reduce((a,b)=>a+b,0) / calPeaks.length;
+              const th = Math.max(0.5, +(avg * 0.7).toFixed(1));
+              document.getElementById('shotG').value = th;
+              saveSettings();
+              if (typeof pushShotSettings === 'function') pushShotSettings();
               calMode = false;
-              setBanner('CALIBRATION FINISHED', 'info');
-              setTimeout(() => { if (bannerEl && bannerEl.textContent.includes('FINISHED')) setBanner(''); }, 5000);
+              setBanner('Threshold ' + th + ' g', 'amber');
+              setTimeout(() => { if (bannerEl && bannerEl.textContent.includes('Threshold')) setBanner(''); }, 4000);
             }
-            draw();
-            update();
             return;
           }
           if (isShot && document.getElementById('autoShot')?.checked && sessionActive) {
